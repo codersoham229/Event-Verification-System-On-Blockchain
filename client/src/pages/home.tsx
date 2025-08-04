@@ -85,6 +85,13 @@ export default function Home() {
 
   const [activeTab, setActiveTab] = useState('create');
 
+  // Debug contract address loading
+  useEffect(() => {
+    console.log('Debug - Contract address:', contractAddress);
+    console.log('Debug - Contract address env var:', import.meta.env.VITE_CONTRACT_ADDRESS);
+    console.log('Debug - Is default address?', contractAddress === "0x0000000000000000000000000000000000000000");
+  }, [contractAddress]);
+
   // Handle event creation
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
