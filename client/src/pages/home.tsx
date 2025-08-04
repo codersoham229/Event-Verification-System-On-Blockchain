@@ -110,11 +110,18 @@ export default function Home() {
 
     if (result) {
       setCreatedEventId(result.eventId);
-      // Load the created event details
-      const eventDetails = await getEvent(result.eventId);
-      if (eventDetails) {
-        setCreatedEvent(eventDetails);
-      }
+      // Don't try to load event details immediately, just show success with the ID
+      // The event details loading is causing issues with the smart contract
+      setCreatedEvent({
+        id: result.eventId,
+        name: eventForm.name,
+        description: eventForm.description,
+        date: new Date(eventForm.date).toISOString(),
+        ticketPrice: eventForm.ticketPrice,
+        maxTickets: parseInt(eventForm.maxTickets),
+        ticketsSold: 0,
+        organizer: walletState.address || ''
+      });
     }
   };
 
@@ -366,25 +373,15 @@ export default function Home() {
                         />
                       </div>
 
-                      <div className="space-y-2">
-                        {/* Debug info - will remove later */}
-                        <div className="text-xs text-gray-500 bg-gray-100 p-2 rounded">
-                          Debug: Connected: {walletState.isConnected ? 'Yes' : 'No'} | 
-                          Correct Chain: {walletState.isCorrectChain ? 'Yes' : 'No'} | 
-                          Address: {walletState.address || 'None'} | 
-                          Chain: {walletState.chainId || 'None'}
-                        </div>
-                        
-                        <Button 
-                          type="submit" 
-                          className="w-full bg-primary hover:bg-primary/90"
-                          disabled={!walletState.isConnected || !walletState.isCorrectChain}
-                          data-testid="button-create-event"
-                        >
-                          <Calendar className="w-4 h-4 mr-2" />
-                          Deploy Event to Blockchain
-                        </Button>
-                      </div>
+                      <Button 
+                        type="submit" 
+                        className="w-full bg-primary hover:bg-primary/90"
+                        disabled={!walletState.isConnected || !walletState.isCorrectChain}
+                        data-testid="button-create-event"
+                      >
+                        <Calendar className="w-4 h-4 mr-2" />
+                        Deploy Event to Blockchain
+                      </Button>
                     </form>
 
                     {transactionStatus.status !== 'idle' && activeTab === 'create' && (

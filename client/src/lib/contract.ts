@@ -205,6 +205,10 @@ export class ContractService {
         organizer
       };
     } catch (error: any) {
+      // More specific error handling for event lookup failures
+      if (error.message.includes('Event does not exist')) {
+        throw new Error(`Event with ID ${eventId} does not exist on the smart contract. The event may not have been created successfully.`);
+      }
       throw new Error(`Failed to get event: ${error.message}`);
     }
   }
