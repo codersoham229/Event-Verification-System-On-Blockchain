@@ -95,6 +95,9 @@ export class Web3Provider {
   }
 
   async getAccount(): Promise<string | null> {
+    if (!this.signer && this.provider) {
+      await this.reinitializeSigner();
+    }
     if (!this.signer) return null;
     try {
       return await this.signer.getAddress();
@@ -135,7 +138,25 @@ export class Web3Provider {
     if (!window.ethereum) return;
 
     window.ethereum.on('accountsChanged', onAccountsChanged);
-    window.ethereum.on('chainChanged', onChainChanged);
+    window.ethereum.on('chainChanged', (chainId: string) => {
+      // Reinitialize provider on chain change
+      if (this.provider) {
+        this.provider = new ethers.BrowserProvider(window.ethereum);
+        this.signer = null; // Will be reinitialized when needed
+      }
+      onChainChanged(chainId);
+    });
+  }
+
+  // Reinitialize signer after network change
+  async reinitializeSigner(): Promise<void> {
+    if (this.provider && !this.signer) {
+      try {
+        this.signer = await this.provider.getSigner();
+      } catch (error) {
+        console.warn('Failed to reinitialize signer:', error);
+      }
+    }
   }
 
   removeEventListeners(): void {

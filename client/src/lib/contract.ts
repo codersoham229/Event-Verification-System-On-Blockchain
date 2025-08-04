@@ -28,10 +28,16 @@ export class ContractService {
     this.contractAddress = contractAddress;
   }
 
-  private getContract(): ethers.Contract {
+  private async getContract(): Promise<ethers.Contract> {
+    // Ensure signer is available
+    const account = await web3Provider.getAccount();
+    if (!account) {
+      throw new Error('Wallet not connected. Please connect your wallet first.');
+    }
+    
     const signer = web3Provider.getSigner();
     if (!signer) {
-      throw new Error('Wallet not connected. Please connect your wallet first.');
+      throw new Error('Wallet signer not available. Please reconnect your wallet.');
     }
     
     if (this.contractAddress === "0x0000000000000000000000000000000000000000") {
@@ -58,7 +64,7 @@ export class ContractService {
     maxTickets: number
   ): Promise<{ eventId: string; transactionHash: string }> {
     try {
-      const contract = this.getContract();
+      const contract = await this.getContract();
       const ticketPriceWei = ethers.parseEther(ticketPriceEth);
       const eventDateTimestamp = Math.floor(eventDate.getTime() / 1000);
 
@@ -103,7 +109,7 @@ export class ContractService {
     attendeeName: string
   ): Promise<{ ticketId: string; transactionHash: string }> {
     try {
-      const contract = this.getContract();
+      const contract = await this.getContract();
       
       // Get event details to determine ticket price
       const eventDetails = await this.getEvent(eventId);
@@ -169,7 +175,7 @@ export class ContractService {
     ticketId: string
   ): Promise<{ transactionHash: string }> {
     try {
-      const contract = this.getContract();
+      const contract = await this.getContract();
       const tx = await contract.markTicketUsed(eventId, ticketId);
       await tx.wait();
       

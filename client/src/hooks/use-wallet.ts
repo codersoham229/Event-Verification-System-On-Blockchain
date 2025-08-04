@@ -29,8 +29,19 @@ export function useWallet() {
       }
 
       const address = await web3Provider.getAccount();
+      if (!address) {
+        setWalletState({
+          isConnected: false,
+          address: null,
+          balance: null,
+          chainId: null,
+          isCorrectChain: false
+        });
+        return;
+      }
+
       const network = await web3Provider.getNetwork();
-      const balance = address ? await web3Provider.getBalance(address) : null;
+      const balance = await web3Provider.getBalance(address);
 
       setWalletState({
         isConnected: true,
@@ -40,14 +51,26 @@ export function useWallet() {
         isCorrectChain: network.chainId === REQUIRED_CHAIN_ID
       });
     } catch (error: any) {
+      // Handle network change errors more gracefully
+      if (error.code === 'NETWORK_ERROR' && error.event === 'changed') {
+        // Wait a moment and retry for network changes
+        setTimeout(() => {
+          updateWalletState();
+        }, 1000);
+        return;
+      }
+      
       console.error('Failed to update wallet state:', error);
-      setWalletState({
-        isConnected: false,
-        address: null,
-        balance: null,
-        chainId: null,
-        isCorrectChain: false
-      });
+      // Don't completely disconnect on network errors
+      if (error.code !== 'NETWORK_ERROR') {
+        setWalletState({
+          isConnected: false,
+          address: null,
+          balance: null,
+          chainId: null,
+          isCorrectChain: false
+        });
+      }
     }
   }, []);
 
