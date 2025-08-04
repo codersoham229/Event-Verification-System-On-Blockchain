@@ -11,6 +11,7 @@ import { WalletConnect } from '@/components/wallet-connect';
 import { QRCodeDisplay } from '@/components/qr-code-display';
 import { QRScanner } from '@/components/qr-scanner';
 import { TransactionStatus } from '@/components/transaction-status';
+
 import { useWallet } from '@/hooks/use-wallet';
 import { useContract } from '@/hooks/use-contract';
 import { useToast } from '@/hooks/use-toast';
@@ -39,7 +40,8 @@ export default function Home() {
     mintTicket, 
     verifyTicket, 
     markTicketUsed,
-    getEvent 
+    getEvent,
+    contractAddress
   } = useContract();
   const { toast } = useToast();
 
@@ -275,6 +277,20 @@ export default function Home() {
                     <p className="text-slate-600">Deploy your event to the blockchain and generate a unique event ID</p>
                   </CardHeader>
                   <CardContent>
+                    {/* Contract deployment notice */}
+                    {contractAddress === "0x0000000000000000000000000000000000000000" && (
+                      <Alert className="mb-4 border-yellow-200 bg-yellow-50">
+                        <Info className="w-4 h-4 text-yellow-600" />
+                        <AlertDescription className="text-yellow-800">
+                          <strong>Smart Contract Required:</strong> To use this app, deploy the contract from <code>contracts/EventTicketing.sol</code> to Sepolia testnet using{' '}
+                          <a href="https://remix.ethereum.org" target="_blank" rel="noopener noreferrer" className="underline">
+                            Remix IDE
+                          </a>, then set <code>VITE_CONTRACT_ADDRESS</code> in your environment.{' '}
+                          <a href="/DEPLOYMENT.md" className="underline">View full guide</a>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    
                     <form onSubmit={handleCreateEvent} className="space-y-4">
                       <div>
                         <Label htmlFor="eventName">Event Name</Label>
