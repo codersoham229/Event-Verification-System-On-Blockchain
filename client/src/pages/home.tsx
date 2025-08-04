@@ -366,15 +366,25 @@ export default function Home() {
                         />
                       </div>
 
-                      <Button 
-                        type="submit" 
-                        className="w-full bg-primary hover:bg-primary/90"
-                        disabled={!walletState.isConnected || !walletState.isCorrectChain}
-                        data-testid="button-create-event"
-                      >
-                        <Calendar className="w-4 h-4 mr-2" />
-                        Deploy Event to Blockchain
-                      </Button>
+                      <div className="space-y-2">
+                        {/* Debug info - will remove later */}
+                        <div className="text-xs text-gray-500 bg-gray-100 p-2 rounded">
+                          Debug: Connected: {walletState.isConnected ? 'Yes' : 'No'} | 
+                          Correct Chain: {walletState.isCorrectChain ? 'Yes' : 'No'} | 
+                          Address: {walletState.address || 'None'} | 
+                          Chain: {walletState.chainId || 'None'}
+                        </div>
+                        
+                        <Button 
+                          type="submit" 
+                          className="w-full bg-primary hover:bg-primary/90"
+                          disabled={!walletState.isConnected || !walletState.isCorrectChain}
+                          data-testid="button-create-event"
+                        >
+                          <Calendar className="w-4 h-4 mr-2" />
+                          Deploy Event to Blockchain
+                        </Button>
+                      </div>
                     </form>
 
                     {transactionStatus.status !== 'idle' && activeTab === 'create' && (
