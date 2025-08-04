@@ -85,12 +85,7 @@ export default function Home() {
 
   const [activeTab, setActiveTab] = useState('create');
 
-  // Debug contract address loading
-  useEffect(() => {
-    console.log('Debug - Contract address:', contractAddress);
-    console.log('Debug - Contract address env var:', import.meta.env.VITE_CONTRACT_ADDRESS);
-    console.log('Debug - Is default address?', contractAddress === "0x0000000000000000000000000000000000000000");
-  }, [contractAddress]);
+
 
   // Handle event creation
   const handleCreateEvent = async (e: React.FormEvent) => {
@@ -284,8 +279,8 @@ export default function Home() {
                     <p className="text-slate-600">Deploy your event to the blockchain and generate a unique event ID</p>
                   </CardHeader>
                   <CardContent>
-                    {/* Contract deployment notice */}
-                    {contractAddress === "0x0000000000000000000000000000000000000000" && (
+                    {/* Contract status notice */}
+                    {contractAddress === "0x0000000000000000000000000000000000000000" ? (
                       <Alert className="mb-4 border-yellow-200 bg-yellow-50">
                         <Info className="w-4 h-4 text-yellow-600" />
                         <AlertDescription className="text-yellow-800">
@@ -294,6 +289,14 @@ export default function Home() {
                             Remix IDE
                           </a>, then set <code>VITE_CONTRACT_ADDRESS</code> in your environment.{' '}
                           <a href="/DEPLOYMENT.md" className="underline">View full guide</a>
+                        </AlertDescription>
+                      </Alert>
+                    ) : (
+                      <Alert className="mb-4 border-green-200 bg-green-50">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <AlertDescription className="text-green-800">
+                          <strong>Contract Connected:</strong> Smart contract deployed at{' '}
+                          <code className="bg-green-100 px-1 rounded text-xs">{contractAddress}</code> on Sepolia testnet.
                         </AlertDescription>
                       </Alert>
                     )}
