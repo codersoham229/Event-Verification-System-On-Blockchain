@@ -4,14 +4,11 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
 
 contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
-    using Counters for Counters.Counter;
-    
-    Counters.Counter private _eventIdCounter;
-    Counters.Counter private _tokenIdCounter;
-    
+    uint256 private _eventIdCounter;
+    uint256 private _tokenIdCounter;
+
     struct Event {
         uint256 id;
         string name;
@@ -23,7 +20,7 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
         address organizer;
         bool active;
     }
-    
+
     struct Ticket {
         uint256 eventId;
         address owner;
@@ -31,37 +28,37 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
         bool isUsed;
         uint256 mintedAt;
     }
-    
+
     mapping(uint256 => Event) public events;
     mapping(uint256 => Ticket) public tickets;
     mapping(uint256 => mapping(uint256 => bool)) public eventTickets; // eventId => tokenId => exists
-    
+
     event EventCreated(
         uint256 indexed eventId,
         string name,
         address indexed organizer
     );
-    
+
     event TicketMinted(
         uint256 indexed eventId,
         uint256 indexed tokenId,
         address indexed owner,
         string attendeeName
     );
-    
+
     event TicketVerified(
         uint256 indexed eventId,
         uint256 indexed tokenId,
         address indexed verifier
     );
-    
+
     event TicketUsed(
         uint256 indexed eventId,
         uint256 indexed tokenId
     );
-    
-    constructor() ERC721("EventTicket", "EVTKT") {}
-    
+
+    constructor() ERC721("EventTicket", "EVTKT") Ownable(msg.sender) {}
+
     /**
      * @dev Create a new event
      */
@@ -75,10 +72,10 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
         require(bytes(name).length > 0, "Event name cannot be empty");
         require(eventDate > block.timestamp, "Event date must be in the future");
         require(maxTickets > 0, "Max tickets must be greater than 0");
-        
-        _eventIdCounter.increment();
-        uint256 eventId = _eventIdCounter.current();
-        
+
+        _eventIdCounter++;
+        uint256 eventId = _eventIdCounter;
+
         events[eventId] = Event({
             id: eventId,
             name: name,
@@ -90,11 +87,11 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
             organizer: msg.sender,
             active: true
         });
-        
+
         emit EventCreated(eventId, name, msg.sender);
         return eventId;
     }
-    
+
     /**
      * @dev Mint a ticket for an event
      */
@@ -107,13 +104,13 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
         require(event_.ticketsSold < event_.maxTickets, "Event is sold out");
         require(msg.value >= event_.ticketPrice, "Insufficient payment");
         require(bytes(attendeeName).length > 0, "Attendee name cannot be empty");
-        
-        _tokenIdCounter.increment();
-        uint256 tokenId = _tokenIdCounter.current();
-        
+
+        _tokenIdCounter++;
+        uint256 tokenId = _tokenIdCounter;
+
         // Mint the NFT
         _safeMint(msg.sender, tokenId);
-        
+
         // Store ticket information
         tickets[tokenId] = Ticket({
             eventId: eventId,
@@ -122,25 +119,25 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
             isUsed: false,
             mintedAt: block.timestamp
         });
-        
+
         // Mark this ticket as belonging to this event
         eventTickets[eventId][tokenId] = true;
-        
+
         // Update event ticket count
         event_.ticketsSold++;
-        
+
         // Refund excess payment
         if (msg.value > event_.ticketPrice) {
             payable(msg.sender).transfer(msg.value - event_.ticketPrice);
         }
-        
+
         // Send payment to event organizer
         payable(event_.organizer).transfer(event_.ticketPrice);
-        
+
         emit TicketMinted(eventId, tokenId, msg.sender, attendeeName);
         return tokenId;
     }
-    
+
     /**
      * @dev Verify a ticket for an event
      */
@@ -154,41 +151,41 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
         bool isUsed
     ) {
         // Check if ticket exists and belongs to the event
-        if (!eventTickets[eventId][ticketId] || !_exists(ticketId)) {
+        if (!eventTickets[eventId][ticketId] || _ownerOf(ticketId) == address(0)) {
             return (false, address(0), "", false);
         }
-        
+
         Ticket memory ticket = tickets[ticketId];
-        
+
         // Verify ticket belongs to the specified event
         if (ticket.eventId != eventId) {
             return (false, address(0), "", false);
         }
-        
+
         return (true, ticket.owner, ticket.attendeeName, ticket.isUsed);
     }
-    
+
     /**
      * @dev Mark a ticket as used (can only be called by event organizer or contract owner)
      */
     function markTicketUsed(uint256 eventId, uint256 ticketId) external {
-        require(_exists(ticketId), "Ticket does not exist");
+        require(_ownerOf(ticketId) != address(0), "Ticket does not exist");
         require(eventTickets[eventId][ticketId], "Ticket does not belong to this event");
-        
+
         Event memory event_ = events[eventId];
         require(
             msg.sender == event_.organizer || msg.sender == owner(),
             "Only event organizer or contract owner can mark tickets as used"
         );
-        
+
         Ticket storage ticket = tickets[ticketId];
         require(!ticket.isUsed, "Ticket already used");
-        
+
         ticket.isUsed = true;
-        
+
         emit TicketUsed(eventId, ticketId);
     }
-    
+
     /**
      * @dev Get event details
      */
@@ -203,7 +200,7 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
     ) {
         Event memory event_ = events[eventId];
         require(event_.active || event_.organizer != address(0), "Event does not exist");
-        
+
         return (
             event_.name,
             event_.description,
@@ -214,7 +211,7 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
             event_.organizer
         );
     }
-    
+
     /**
      * @dev Get ticket details
      */
@@ -224,8 +221,8 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
         string memory attendeeName,
         bool isUsed
     ) {
-        require(_exists(tokenId), "Ticket does not exist");
-        
+        require(_ownerOf(tokenId) != address(0), "Ticket does not exist");
+
         Ticket memory ticket = tickets[tokenId];
         return (
             ticket.eventId,
@@ -234,14 +231,14 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
             ticket.isUsed
         );
     }
-    
+
     /**
      * @dev Get total number of events created
      */
     function eventCount() external view returns (uint256) {
-        return _eventIdCounter.current();
+        return _eventIdCounter;
     }
-    
+
     /**
      * @dev Deactivate an event (only organizer)
      */
@@ -249,31 +246,29 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
         Event storage event_ = events[eventId];
         require(msg.sender == event_.organizer, "Only event organizer can deactivate");
         require(event_.active, "Event is already inactive");
-        
+
         event_.active = false;
     }
-    
+
     /**
      * @dev Emergency withdrawal function (only owner)
      */
     function emergencyWithdraw() external onlyOwner {
         payable(owner()).transfer(address(this).balance);
     }
-    
+
     /**
      * @dev Override transfer functions to update ticket owner
      */
-    function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 tokenId,
-        uint256 batchSize
-    ) internal override {
-        super._beforeTokenTransfer(from, to, tokenId, batchSize);
-        
+    function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
+        address from = _ownerOf(tokenId);
+        address previousOwner = super._update(to, tokenId, auth);
+
         // Update ticket owner when transferred
         if (from != address(0) && to != address(0)) {
             tickets[tokenId].owner = to;
         }
+
+        return previousOwner;
     }
 }

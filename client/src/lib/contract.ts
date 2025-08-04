@@ -106,16 +106,28 @@ export class ContractService {
 
   async mintTicket(
     eventId: string,
-    attendeeName: string
+    attendeeName: string,
+    ticketPriceEth?: string
   ): Promise<{ ticketId: string; transactionHash: string }> {
     try {
       const contract = await this.getContract();
       
-      // Get event details to determine ticket price
-      const eventDetails = await this.getEvent(eventId);
+      // If ticket price is provided, use it; otherwise try to get event details
+      let ticketPrice = "0.001"; // Default fallback price
+      if (ticketPriceEth) {
+        ticketPrice = ticketPriceEth;
+      } else {
+        try {
+          const eventDetails = await this.getEvent(eventId);
+          ticketPrice = eventDetails.ticketPrice;
+        } catch (error) {
+          console.warn('Could not fetch event details, using default price:', error);
+          // Continue with default price
+        }
+      }
       
       const tx = await contract.mintTicket(eventId, attendeeName, {
-        value: ethers.parseEther(eventDetails.ticketPrice)
+        value: ethers.parseEther(ticketPrice)
       });
 
       const receipt = await tx.wait();

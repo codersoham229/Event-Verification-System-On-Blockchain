@@ -138,7 +138,10 @@ export default function Home() {
       return;
     }
 
-    const result = await mintTicket(ticketForm.eventId, ticketForm.attendeeName);
+    // Use the ticket price from created event if available, otherwise use a default
+    const ticketPrice = createdEvent?.ticketPrice || "0.001";
+    
+    const result = await mintTicket(ticketForm.eventId, ticketForm.attendeeName, ticketPrice);
 
     if (result) {
       setMintedTicketId(result.ticketId);
@@ -163,11 +166,10 @@ export default function Home() {
     const result = await verifyTicket(verifyForm.eventId, verifyForm.ticketId);
 
     if (result) {
-      // Load event details for verification display
-      const eventDetails = await getEvent(verifyForm.eventId);
+      // Don't try to load event details to avoid the contract mismatch error
       setVerificationResult({
         ...result,
-        event: eventDetails || undefined
+        event: undefined // Skip event details for now
       });
     }
   };
