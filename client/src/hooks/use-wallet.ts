@@ -17,7 +17,8 @@ export function useWallet() {
 
   const updateWalletState = useCallback(async () => {
     try {
-      if (!web3Provider.isConnected()) {
+      // First check if MetaMask is available and has connected accounts
+      if (!window.ethereum) {
         setWalletState({
           isConnected: false,
           address: null,
@@ -26,6 +27,35 @@ export function useWallet() {
           isCorrectChain: false
         });
         return;
+      }
+
+      // Check if there are connected accounts
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+      if (!accounts || accounts.length === 0) {
+        setWalletState({
+          isConnected: false,
+          address: null,
+          balance: null,
+          chainId: null,
+          isCorrectChain: false
+        });
+        return;
+      }
+
+      // Initialize provider and signer if not already done
+      let connection = null;
+      if (!web3Provider.getProvider()) {
+        connection = await web3Provider.initializeIfConnected();
+        if (!connection) {
+          setWalletState({
+            isConnected: false,
+            address: null,
+            balance: null,
+            chainId: null,
+            isCorrectChain: false
+          });
+          return;
+        }
       }
 
       const address = await web3Provider.getAccount();

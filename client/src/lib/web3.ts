@@ -31,9 +31,10 @@ export class Web3Provider {
     }
 
     try {
-      // Request account access
-      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      // Request account access (this will prompt if not already connected)
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       
+      // Initialize provider and signer
       this.provider = new ethers.BrowserProvider(window.ethereum);
       this.signer = await this.provider.getSigner();
       
@@ -48,6 +49,42 @@ export class Web3Provider {
       };
     } catch (error: any) {
       throw new Error(`Failed to connect wallet: ${error.message}`);
+    }
+  }
+
+  // Initialize connection silently if already connected
+  async initializeIfConnected(): Promise<{
+    address: string;
+    chainId: number;
+    balance: string;
+  } | null> {
+    if (!window.ethereum) {
+      return null;
+    }
+
+    try {
+      // Check existing accounts without prompting
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+      if (!accounts || accounts.length === 0) {
+        return null;
+      }
+
+      // Initialize provider and signer
+      this.provider = new ethers.BrowserProvider(window.ethereum);
+      this.signer = await this.provider.getSigner();
+      
+      const address = await this.signer.getAddress();
+      const network = await this.provider.getNetwork();
+      const balance = await this.provider.getBalance(address);
+      
+      return {
+        address,
+        chainId: Number(network.chainId),
+        balance: ethers.formatEther(balance)
+      };
+    } catch (error: any) {
+      console.warn('Failed to initialize existing connection:', error);
+      return null;
     }
   }
 
