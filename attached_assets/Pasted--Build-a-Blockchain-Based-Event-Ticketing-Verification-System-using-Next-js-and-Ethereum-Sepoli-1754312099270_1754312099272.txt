@@ -1,0 +1,114 @@
+
+Build a Blockchain-Based Event Ticketing & Verification System using
+Next.js and Ethereum (Sepolia testnet)
+
+________________________________
+
+📦 Tech Stack:
+
+Frontend: Next.js + TailwindCSS (or basic CSS)
+
+Blockchain: Solidity Smart Contract deployed on Sepolia
+
+Web3: ethers.js or viem + wagmi (for wallet connection)
+
+Wallet: WalletConnect / MetaMask
+
+Smart Contract: Handles event creation, ticket generation (mint), and
+verification.
+
+________________________________
+
+🌐 Pages & Features:
+
+1. /createevent (Event Creation)
+
+Form: Name, Description, Date.
+
+Calls smart contract function to create event.
+
+Returns event ID (from contract) and display QR code with event ID.
+
+2. /generateticket (Mint Ticket)
+
+Input: Event ID, User Name.
+
+User connects wallet (MetaMask).
+
+Calls smart contract to mint a ticket NFT or token tied to wallet
+address and event.
+
+Show QR code with eventId + ticketId + walletAddress.
+
+Store or display ticket ID and wallet.
+
+3. /verifyevent (Verify Ticket)
+
+Scan ticket QR or input manually.
+
+Smart contract call:
+
+Verify if ticket ID exists.
+
+Check that it matches the event ID.
+
+Fetch and display ticket owner’s wallet address.
+
+Display ✅ "Verified" with wallet address, or ❌ "Invalid/Fake Ticket".
+
+________________________________
+
+🔐 Smart Contract Requirements:
+
+createEvent(name, date) → eventId
+
+mintTicket(eventId) → ticketId
+
+verifyTicket(eventId, ticketId) → (bool valid, address owner)
+
+Map each ticket to:
+
+eventId
+
+owner address
+
+Optional: "used" flag for one-time verification
+
+________________________________
+
+🧪 Testing:
+
+Deploy contract to Sepolia testnet using Remix or Hardhat.
+
+Use MetaMask + Sepolia ETH to interact.
+
+Keep all data on-chain (ticket/event mapping).
+
+No backend — full Web3 + frontend only.
+
+________________________________
+
+⚙️ Libraries to Use:
+
+ethers.js (or wagmi + viem)
+
+qrcode.react
+
+uuid
+
+react-qr-reader (optional)
+
+TailwindCSS (or plain CSS)
+
+________________________________
+
+🏷️ Notes:
+
+No login system needed.
+
+Just wallet connect for user identity.
+
+Each ticket minted is tamper-proof and verified via blockchain.
+
+Bonus: Add a "Digital Badge" or downloadable certificate after
+successful verification.
