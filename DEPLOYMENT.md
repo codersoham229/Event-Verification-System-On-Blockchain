@@ -38,8 +38,10 @@ Visit these Sepolia faucets to get test ETH:
 
 For testing purposes, you can use this deployed test contract on Sepolia:
 ```
-VITE_CONTRACT_ADDRESS=0x742d35Cc60C73F58D5ABfa5B6b8D66Ea8F8C0E8B
+VITE_CONTRACT_ADDRESS=0x742d35cC60C73F58d5Abfa5b6b8D66eA8f8C0E8B
 ```
+
+**Note**: The address is case-sensitive (checksummed) and must be copied exactly as shown.
 
 ## Troubleshooting
 

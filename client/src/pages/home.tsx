@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -11,10 +12,13 @@ import { WalletConnect } from '@/components/wallet-connect';
 import { QRCodeDisplay } from '@/components/qr-code-display';
 import { QRScanner } from '@/components/qr-scanner';
 import { TransactionStatus } from '@/components/transaction-status';
+import { DashboardLink } from '@/components/dashboard-link';
 
 import { useWallet } from '@/hooks/use-wallet';
 import { useContract } from '@/hooks/use-contract';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/lib/auth-context';
+import { supabase } from '@/lib/supabase';
 import { Event, Ticket } from '@/types/web3';
 import { 
   Calendar, 
@@ -28,10 +32,21 @@ import {
   XCircle,
   AlertTriangle,
   Medal,
-  Info
+  Info,
+  LogOut,
+  User as UserIcon
 } from 'lucide-react';
 
 export default function Home() {
+  const [, setLocation] = useLocation();
+  const { user, signOut } = useAuth();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!user) {
+      setLocation('/login');
+    }
+  }, [user, setLocation]);
   const { walletState } = useWallet();
   const { 
     transactionStatus, 
@@ -112,7 +127,7 @@ export default function Home() {
       setCreatedEventId(result.eventId);
       // Don't try to load event details immediately, just show success with the ID
       // The event details loading is causing issues with the smart contract
-      setCreatedEvent({
+      const eventData = {
         id: result.eventId,
         name: eventForm.name,
         description: eventForm.description,
@@ -121,7 +136,36 @@ export default function Home() {
         maxTickets: parseInt(eventForm.maxTickets),
         ticketsSold: 0,
         organizer: walletState.address || ''
-      });
+      };
+      setCreatedEvent(eventData);
+
+      // Sync event to Supabase for user dashboard
+      try {
+        const { error } = await supabase
+          .from('events')
+          .insert({
+            name: eventForm.name,
+            description: eventForm.description,
+            date: new Date(eventForm.date).toISOString(),
+            location: 'TBA', // You can add a location field to the form if needed
+            total_tickets: parseInt(eventForm.maxTickets),
+            available_tickets: parseInt(eventForm.maxTickets),
+            price: eventForm.ticketPrice,
+            organizer_address: walletState.address,
+            transaction_hash: result.transactionHash
+          });
+
+        if (error) {
+          console.error('Failed to sync event to database:', error);
+        } else {
+          toast({
+            title: "Event Synced",
+            description: "Event is now visible to users"
+          });
+        }
+      } catch (err) {
+        console.error('Error syncing event:', err);
+      }
     }
   };
 
@@ -141,12 +185,12 @@ export default function Home() {
     // Use the ticket price from created event if available, otherwise use a default
     const ticketPrice = createdEvent?.ticketPrice || "0.001";
     
-    const result = await mintTicket(ticketForm.eventId, ticketForm.attendeeName, ticketPrice);
+    const result = await mintTicket(ticketForm.eventId, ticketForm.attendeeName);
 
     if (result) {
       setMintedTicketId(result.ticketId);
       // Create ticket object for display
-      setMintedTicket({
+      const ticketData = {
         id: result.ticketId,
         eventId: ticketForm.eventId,
         tokenId: result.ticketId,
@@ -155,7 +199,33 @@ export default function Home() {
         isUsed: false,
         mintedAt: new Date().toISOString(),
         transactionHash: result.transactionHash
-      });
+      };
+      setMintedTicket(ticketData);
+
+      // Sync ticket to Supabase for user dashboard
+      try {
+        const { error } = await supabase
+          .from('tickets')
+          .insert({
+            ticket_id: result.ticketId,
+            event_id: parseInt(ticketForm.eventId),
+            owner: walletState.address,
+            attendee_name: ticketForm.attendeeName,
+            used: false,
+            transaction_hash: result.transactionHash
+          });
+
+        if (error) {
+          console.error('Failed to sync ticket to database:', error);
+        } else {
+          toast({
+            title: "Ticket Synced",
+            description: "Ticket is now visible in user dashboard"
+          });
+        }
+      } catch (err) {
+        console.error('Error syncing ticket:', err);
+      }
     }
   };
 
@@ -222,6 +292,19 @@ export default function Home() {
   const getTicketQRData = (eventId: string, ticketId: string, walletAddress: string) => 
     `event:${eventId}:ticket:${ticketId}:wallet:${walletAddress}`;
 
+  const handleLogout = async () => {
+    await signOut();
+    toast({
+      title: "Logged Out",
+      description: "You have been successfully logged out.",
+    });
+    setLocation('/');
+  };
+
+  if (!user) {
+    return null; // Will redirect in useEffect
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
@@ -236,9 +319,27 @@ export default function Home() {
               <Badge variant="outline" className="text-xs">
                 Sepolia Testnet
               </Badge>
+              {user && (
+                <Badge variant="secondary" className="text-xs">
+                  <UserIcon className="h-3 w-3 mr-1" />
+                  {user.user_metadata?.name || user.email}
+                </Badge>
+              )}
             </div>
             
-            <WalletConnect />
+            <div className="flex items-center gap-3">
+              <DashboardLink />
+              <WalletConnect />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Logout
+              </Button>
+            </div>
           </div>
         </div>
       </header>
