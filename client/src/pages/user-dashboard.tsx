@@ -23,8 +23,8 @@ import {
   Mail,
   User as UserIcon,
   CheckCircle,
-  Moon,
-  Sun
+  ExternalLink,
+  Link as LinkIcon
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { QRCodeDisplay } from '@/components/qr-code-display';
@@ -67,7 +67,6 @@ export default function UserDashboard() {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [enrollmentForm, setEnrollmentForm] = useState({ fullName: '', email: '' });
   const [enrolling, setEnrolling] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<any>(null);
   const [userAppliedEvents, setUserAppliedEvents] = useState<number[]>([]);
@@ -211,6 +210,7 @@ export default function UserDashboard() {
           event_location: ticket.events?.location || '',
           used: ticket.is_used || false,
           purchased_at: ticket.created_at,
+          transaction_hash: ticket.transaction_hash || '',
           source: 'minted'
         }));
         allTickets = [...allTickets, ...transformedTickets];
@@ -235,6 +235,7 @@ export default function UserDashboard() {
               event_location: eventData?.location || 'TBA',
               used: false,
               purchased_at: emailTicket.sent_at,
+              transaction_hash: emailTicket.transaction_hash || '',
               source: 'email',
               attendee_name: emailTicket.attendee_name
             };
@@ -341,14 +342,6 @@ export default function UserDashboard() {
             </div>
 
             <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setDarkMode(!darkMode)}
-                className="text-slate-300 hover:text-white"
-              >
-                {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-              </Button>
               <Badge variant="outline" className="bg-indigo-600/20 border-indigo-400/50 text-indigo-300 px-3 py-1">
                 <UserCircle className="mr-1.5 h-4 w-4" />
                 {user?.user_metadata?.name || user?.email}
@@ -571,6 +564,21 @@ export default function UserDashboard() {
                           <span className="text-slate-400">Issued:</span>
                           <span className="ml-auto">{new Date(ticket.purchased_at).toLocaleDateString()}</span>
                         </div>
+                        {ticket.transaction_hash && (
+                          <div className="flex items-center text-slate-300 text-sm">
+                            <LinkIcon className="mr-2 h-4 w-4 text-cyan-400" />
+                            <span className="text-slate-400">Blockchain:</span>
+                            <a 
+                              href={`https://sepolia.etherscan.io/tx/${ticket.transaction_hash}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="ml-auto text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono text-xs"
+                            >
+                              {ticket.transaction_hash.slice(0, 6)}...{ticket.transaction_hash.slice(-4)}
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                        )}
                         {ticket.source && (
                           <div className="flex items-center text-slate-300 text-sm">
                             <Star className="mr-2 h-4 w-4 text-yellow-400" />

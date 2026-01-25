@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS ticket_emails (
   ticket_owner VARCHAR(255) NOT NULL,
   attendee_name VARCHAR(255),
   sent_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  transaction_hash VARCHAR(66),
   qr_data TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

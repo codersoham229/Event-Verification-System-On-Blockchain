@@ -40,6 +40,7 @@ import {
   X
 } from 'lucide-react';
 import { supabase, type TicketTransaction, type EventAnalytics } from '@/lib/supabase';
+import { contractService } from '@/lib/contract';
 
 interface DashboardStats {
   total_events: number;
@@ -258,7 +259,53 @@ export default function DashboardPage() {
   const handleApproveRequest = async (request: EnrollmentRequest) => {
     setProcessingRequest(request.id);
     try {
-      // Update request status
+      // Step 1: Mint ticket on blockchain
+      console.log('🎫 Minting blockchain ticket for:', request.requester_name);
+      
+      let blockchainTicketId = '';
+      let transactionHash = '';
+      
+      try {
+        const mintResult = await contractService.mintTicket(
+          request.event_id.toString(),
+          request.requester_name
+        );
+        
+        blockchainTicketId = mintResult.ticketId;
+        transactionHash = mintResult.transactionHash;
+        
+        console.log('✅ Blockchain ticket minted successfully!', {
+          ticketId: blockchainTicketId,
+          transactionHash: transactionHash
+        });
+      } catch (mintError: any) {
+        console.error('❌ Blockchain minting failed:', mintError);
+        alert('Failed to mint ticket on blockchain: ' + mintError.message);
+        setProcessingRequest(null);
+        return;
+      }
+
+      // Step 2: Store ticket in database
+      const { error: ticketInsertError } = await supabase
+        .from('tickets')
+        .insert({
+          ticket_id: parseInt(blockchainTicketId),
+          event_id: request.event_id,
+          token_id: parseInt(blockchainTicketId),
+          owner_address: request.requester_email, // Using email as identifier
+          attendee_name: request.requester_name,
+          price: 0, // Free ticket from enrollment
+          is_used: false,
+          transaction_hash: transactionHash,
+          created_at: new Date().toISOString()
+        });
+
+      if (ticketInsertError) {
+        console.error('Error saving ticket to database:', ticketInsertError);
+        // Continue anyway since blockchain ticket is minted
+      }
+
+      // Step 3: Update request status
       const { error: updateError } = await supabase
         .from('enrollment_requests')
         .update({ 
@@ -269,26 +316,30 @@ export default function DashboardPage() {
 
       if (updateError) throw updateError;
 
-      // Create ticket email entry
+      // Step 4: Create ticket email entry for user to see it
       const { error: ticketError } = await supabase
         .from('ticket_emails')
         .insert({
-          ticket_id: Math.floor(Math.random() * 1000000),
+          ticket_id: parseInt(blockchainTicketId),
           event_id: request.event_id,
           recipient_email: request.requester_email,
           ticket_owner: request.requester_email,
           attendee_name: request.requester_name,
           sent_at: new Date().toISOString(),
+          transaction_hash: transactionHash,
           qr_data: JSON.stringify({
             eventId: request.event_id,
-            ticketId: Math.floor(Math.random() * 1000000),
-            email: request.requester_email
+            ticketId: blockchainTicketId,
+            email: request.requester_email,
+            transactionHash: transactionHash
           })
         });
 
-      if (ticketError) throw ticketError;
+      if (ticketError) {
+        console.error('Error creating ticket email:', ticketError);
+      }
 
-      alert(`Enrollment approved! Ticket sent to ${request.requester_email}`);
+      alert(`✅ Enrollment approved! Blockchain ticket minted successfully.\n\nTicket ID: ${blockchainTicketId}\nTransaction: ${transactionHash.slice(0, 10)}...${transactionHash.slice(-8)}\n\nTicket sent to ${request.requester_email}`);
       fetchDashboardData();
     } catch (error) {
       console.error('Error approving request:', error);

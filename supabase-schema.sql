@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS tickets (
     event_id BIGINT NOT NULL,
     token_id BIGINT NOT NULL,
     owner_address VARCHAR(42) NOT NULL,
+    attendee_name VARCHAR(255),
     price DECIMAL(18, 8) NOT NULL,
     is_used BOOLEAN DEFAULT false,
     qr_code TEXT,

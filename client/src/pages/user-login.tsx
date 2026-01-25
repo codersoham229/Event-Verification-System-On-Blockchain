@@ -57,6 +57,9 @@ export default function UserLogin() {
           localStorage.setItem('rememberMe', 'true');
         }
 
+        // Wait a bit for auth state to propagate before redirecting
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
         // Redirect to user dashboard
         setLocation('/user-dashboard');
       }
