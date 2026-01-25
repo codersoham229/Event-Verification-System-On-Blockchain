@@ -13,6 +13,10 @@ import LoginPage from "@/pages/login";
 import UserSignupPage from "@/pages/user-signup";
 import UserLoginPage from "@/pages/user-login";
 import UserDashboardPage from "@/pages/user-dashboard";
+import NeonButtonDemo from "@/pages/neon-button-demo";
+import { BackgroundBeamsDemo } from "@/components/background-beams-demo";
+import { ThemeProvider } from "next-themes";
+import Showcase from "@/pages/demo";
 
 function Router() {
   return (
@@ -25,6 +29,9 @@ function Router() {
       <Route path="/user-dashboard" component={UserDashboardPage} />
       <Route path="/home" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
+      <Route path="/neon-button-demo" component={NeonButtonDemo} />
+      <Route path="/beams-demo" component={BackgroundBeamsDemo} />
+      <Route path="/demo" component={Showcase} />
       <Route path="/createevent" component={Home} />
       <Route path="/generateticket" component={Home} />
       <Route path="/verifyevent" component={Home} />
@@ -33,15 +40,18 @@ function Router() {
   );
 }
 
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
-      </AuthProvider>
+      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router />
+          </TooltipProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
