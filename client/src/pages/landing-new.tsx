@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/neon-button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Ticket, Shield, Zap, Globe, CheckCircle, ArrowRight, Sparkles, Lock, Users, 
+import {
+  Ticket, Shield, Zap, Globe, CheckCircle, ArrowRight, Sparkles, Lock, Users,
   BarChart3, UserCircle, TrendingUp, Award, Rocket, Star, ChevronRight, Play,
   QrCode, Code2, Clock, DollarSign, AlertCircle
 } from 'lucide-react';
@@ -83,7 +83,7 @@ export default function LandingPage() {
           backgroundSize: '40px 40px',
           transform: `translateY(${scrollY * 0.5}px)`
         }}></div>
-        
+
         {/* Animated Orbs */}
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/30 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/30 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
@@ -102,13 +102,13 @@ export default function LandingPage() {
                 </div>
               </div>
               <div>
-                <h1 className="text-2xl font-black bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                <h1 className="text-2xl font-black bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent font-bitcount">
                   BlockTix
                 </h1>
                 <p className="text-xs text-slate-400 font-medium">Blockchain Ticketing</p>
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-3">
               <Button
                 variant="ghost"
@@ -134,58 +134,61 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           {/* Main Hero Content */}
           <div className="text-center mb-16">
-            <Badge className="mb-6 px-4 py-2 bg-gradient-to-r from-blue-500/20 to-purple-500/20 border-blue-400/30 text-blue-300 backdrop-blur-sm">
+            <Badge className="mb-6 px-4 py-2 bg-gradient-to-r from-blue-500/20 to-purple-500/20 border-blue-400/30 text-white backdrop-blur-sm">
               <Sparkles className="mr-2 h-4 w-4 text-yellow-400" />
               Powered by Ethereum Blockchain
             </Badge>
-            
-            <h1 className="text-6xl md:text-7xl lg:text-8xl font-black mb-6 leading-tight">
+
+            <h1 className="text-6xl md:text-7xl lg:text-8xl font-black mb-6 leading-tight font-bitcount">
               <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
                 BlockTix
               </span>
             </h1>
-            
-            <p className="text-2xl md:text-3xl text-slate-200 font-bold mb-4">
+
+            <p className="text-2xl md:text-3xl text-blue-300 font-bold mb-4">
               Next-Gen Event Ticketing
             </p>
-            
-            <p className="text-lg md:text-xl text-slate-400 max-w-3xl mx-auto mb-10 leading-relaxed">
-              Create, distribute, and verify blockchain-secured tickets with zero fraud. 
+
+            <p className="text-lg md:text-xl text-blue-200 max-w-3xl mx-auto mb-10 leading-relaxed">
+              Create, distribute, and verify blockchain-secured tickets with zero fraud.
               <span className="block mt-2 text-blue-400 font-semibold">
                 Instant verification • Global reach • Complete transparency
               </span>
             </p>
 
             {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
-              <Button
-                size="lg"
-                onClick={() => setLocation('/signup')}
-                className="group relative bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 hover:from-blue-700 hover:via-purple-700 hover:to-pink-700 text-white font-bold text-lg px-10 py-7 shadow-2xl shadow-blue-500/40 hover:shadow-blue-500/60 transition-all duration-300 overflow-hidden"
-              >
-                <span className="relative z-10 flex items-center">
-                  <Rocket className="mr-2 h-5 w-5" />
-                  Start as Organizer
-                  <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
-                </span>
-                <div className="absolute inset-0 bg-gradient-to-r from-pink-600 via-purple-600 to-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              </Button>
-              
-              <Button
-                size="lg"
-                onClick={() => setLocation('/user-signup')}
-                variant="outline"
-                className="border-2 border-blue-500/50 hover:border-blue-400 hover:bg-blue-500/10 text-white font-bold text-lg px-10 py-7 backdrop-blur-sm transition-all"
-              >
-                <UserCircle className="mr-2 h-5 w-5" />
-                Join as User
-              </Button>
+            <div className="flex flex-col sm:flex-row gap-0 justify-center items-center mb-16 py-8 w-full">
+              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                <Button
+                  size="lg"
+                  onClick={() => setLocation('/signup')}
+                  className="text-lg font-bold px-12 py-6 relative group overflow-hidden bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40 transition-all duration-300 shadow-lg shadow-blue-500/20 hover:shadow-xl hover:shadow-blue-500/40"
+                >
+                  <span className="relative z-10 flex items-center justify-center">
+                    <Rocket className="mr-2 h-6 w-6" />
+                    Start as Organizer
+                  </span>
+                  <div className="absolute inset-0 -z-10 blur-xl bg-gradient-to-r from-blue-600 to-purple-600 opacity-0 group-hover:opacity-50 transition-opacity duration-300"></div>
+                </Button>
+
+                <Button
+                  size="lg"
+                  onClick={() => setLocation('/user-signup')}
+                  className="text-lg font-bold px-12 py-6 relative group overflow-hidden bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40 transition-all duration-300 shadow-lg shadow-blue-500/20 hover:shadow-xl hover:shadow-blue-500/40"
+                >
+                  <span className="relative z-10 flex items-center justify-center">
+                    <UserCircle className="mr-2 h-6 w-6" />
+                    Join as User
+                  </span>
+                  <div className="absolute inset-0 -z-10 blur-xl bg-gradient-to-r from-emerald-600 to-cyan-600 opacity-0 group-hover:opacity-50 transition-opacity duration-300"></div>
+                </Button>
+              </div>
             </div>
 
             {/* Stats Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto">
               {stats.map((stat, index) => (
-                <div 
+                <div
                   key={index}
                   className="group relative bg-slate-900/50 backdrop-blur-xl border border-slate-800/50 rounded-2xl p-6 hover:border-blue-500/50 transition-all duration-300 hover:scale-105"
                 >
@@ -221,7 +224,7 @@ export default function LandingPage() {
       <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-transparent via-slate-900/30 to-transparent">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <Badge className="mb-4 px-4 py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-purple-400/30 text-purple-300">
+            <Badge className="mb-4 px-4 py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-purple-400/30 text-white">
               <Star className="mr-2 h-4 w-4" />
               Premium Features
             </Badge>
@@ -235,11 +238,10 @@ export default function LandingPage() {
 
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {features.map((feature, index) => (
-              <Card 
+              <Card
                 key={index}
-                className={`group relative bg-slate-900/50 backdrop-blur-xl border-slate-800/50 hover:border-blue-500/50 transition-all duration-500 overflow-hidden ${
-                  activeFeature === index ? 'ring-2 ring-blue-500/50 scale-105' : ''
-                }`}
+                className={`group relative bg-slate-900/50 backdrop-blur-xl border-slate-800/50 hover:border-blue-500/50 transition-all duration-500 overflow-hidden ${activeFeature === index ? 'ring-2 ring-blue-500/50 scale-105' : ''
+                  }`}
               >
                 <div className={`absolute inset-0 ${feature.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}></div>
                 <CardContent className="relative p-6">
@@ -260,7 +262,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
-              <Badge className="mb-6 px-4 py-2 bg-gradient-to-r from-green-500/20 to-emerald-500/20 border-green-400/30 text-green-300">
+              <Badge className="mb-6 px-4 py-2 bg-gradient-to-r from-green-500/20 to-emerald-500/20 border-green-400/30 text-white">
                 <CheckCircle className="mr-2 h-4 w-4" />
                 Why BlockTix
               </Badge>
@@ -268,10 +270,10 @@ export default function LandingPage() {
                 Built for Scale & Security
               </h2>
               <p className="text-lg text-slate-300 mb-8 leading-relaxed">
-                Revolutionary blockchain technology meets intuitive event management. 
+                Revolutionary blockchain technology meets intuitive event management.
                 Experience unmatched security, transparency, and reliability at every step.
               </p>
-              
+
               <div className="grid grid-cols-2 gap-4 mb-8">
                 {benefits.map((benefit, index) => (
                   <div key={index} className="flex items-center gap-3 p-4 bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl hover:border-blue-500/50 transition-all group">
@@ -286,10 +288,10 @@ export default function LandingPage() {
               <Button
                 size="lg"
                 onClick={() => setLocation('/signup')}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold px-8 py-6 shadow-lg"
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold px-8 py-6 shadow-lg flex items-center justify-center gap-2"
               >
                 Get Started Free
-                <ArrowRight className="ml-2 h-5 w-5" />
+                <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
 
@@ -321,7 +323,7 @@ export default function LandingPage() {
                     color: 'from-purple-500 to-pink-500'
                   }
                 ].map((item, index) => (
-                  <div 
+                  <div
                     key={index}
                     className="flex items-center gap-4 p-6 bg-slate-900/50 backdrop-blur-xl border border-slate-800/50 rounded-2xl hover:border-blue-500/50 transition-all hover:scale-105 group"
                   >
@@ -345,7 +347,7 @@ export default function LandingPage() {
       <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-transparent via-indigo-950/30 to-transparent">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <Badge className="mb-4 px-4 py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-blue-400/30 text-blue-300">
+            <Badge className="mb-4 px-4 py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-blue-400/30 text-white">
               <Play className="mr-2 h-4 w-4" />
               Simple Process
             </Badge>
@@ -360,7 +362,7 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-3 gap-8 relative">
             {/* Connection Lines */}
             <div className="hidden md:block absolute top-24 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 z-0"></div>
-            
+
             {[
               {
                 step: '01',
@@ -416,7 +418,7 @@ export default function LandingPage() {
               <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
                 Join thousands of event organizers using BlockTix for secure, transparent, and fraud-free ticketing.
               </p>
-              
+
               <div className="flex flex-wrap justify-center gap-4 mb-8">
                 {['No credit card required', 'Setup in 5 minutes', 'Free forever plan'].map((item, index) => (
                   <div key={index} className="flex items-center gap-2 px-4 py-2 bg-white/20 backdrop-blur-sm rounded-full">
@@ -430,11 +432,11 @@ export default function LandingPage() {
                 <Button
                   size="lg"
                   onClick={() => setLocation('/signup')}
-                  className="bg-white hover:bg-gray-100 text-blue-600 font-black text-xl px-12 py-8 shadow-2xl hover:scale-105 transition-all"
+                  className="bg-white hover:bg-gray-100 text-blue-600 font-bold text-sm px-8 py-4 shadow-2xl hover:scale-105 transition-all whitespace-nowrap flex items-center justify-center gap-2"
                 >
-                  <Rocket className="mr-2 h-6 w-6" />
+                  <Rocket className="h-4 w-4" />
                   Create Free Account
-                  <ArrowRight className="ml-2 h-6 w-6" />
+                  <ArrowRight className="h-4 w-4" />
                 </Button>
               </div>
             </CardContent>
@@ -450,7 +452,7 @@ export default function LandingPage() {
               <div className="p-3 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl">
                 <Ticket className="h-6 w-6 text-white" />
               </div>
-              <span className="text-2xl font-black text-white">BlockTix</span>
+              <span className="text-2xl font-black text-white font-bitcount">BlockTix</span>
             </div>
             <p className="text-slate-400 mb-6 max-w-md">
               Blockchain-powered event ticketing for the modern world

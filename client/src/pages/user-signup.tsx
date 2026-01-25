@@ -1,16 +1,15 @@
 import { useState } from 'react';
 import { useLocation } from 'wouter';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { motion } from 'framer-motion';
+import { ChevronLeft, ShieldCheck, Mail, Lock, Eye, EyeOff, Loader2, Sparkles, UserCircle } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { localAuth } from '@/lib/local-auth';
-import { UserCircle, Mail, Lock, Eye, EyeOff, Sparkles, ArrowLeft } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
-export default function UserSignup() {
+export default function UserSignupPage() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -18,29 +17,24 @@ export default function UserSignup() {
     confirmPassword: ''
   });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const validateForm = () => {
     if (!formData.name.trim()) {
-      setError('Please enter your name');
+      toast({ title: "Name Required", description: "Please enter your name.", variant: "destructive" });
       return false;
     }
-    if (!formData.email.trim()) {
-      setError('Please enter your email');
-      return false;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      setError('Please enter a valid email address');
+    if (!formData.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      toast({ title: "Invalid Email", description: "Please enter a valid email address.", variant: "destructive" });
       return false;
     }
     if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters long');
+      toast({ title: "Weak Password", description: "Password must be at least 6 characters.", variant: "destructive" });
       return false;
     }
     if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
+      toast({ title: "Mismatch", description: "Passwords do not match.", variant: "destructive" });
       return false;
     }
     return true;
@@ -48,251 +42,199 @@ export default function UserSignup() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
 
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     setLoading(true);
 
     try {
-      // Use local auth if Supabase is not configured
       if (!isSupabaseConfigured()) {
         try {
           const user = localAuth.signup(formData.email, formData.password, formData.name, 'user');
           localAuth.setCurrentUser(user);
-          
-          setError('');
-          setTimeout(() => {
-            setLocation('/user-dashboard');
-          }, 1000);
+
+          toast({ title: "Account Created! 🎉", description: "Welcome to BlockTix." });
+          setTimeout(() => setLocation('/user-dashboard'), 1000);
           return;
         } catch (error: any) {
           if (error.message === 'Email already registered') {
-            setError('This email is already registered. Redirecting to login...');
-            setTimeout(() => {
-              setLocation('/user-login');
-            }, 1500);
+            toast({ title: "Account Exists", description: "Redirecting to login..." });
+            setTimeout(() => setLocation('/user-login'), 1500);
             return;
           }
           throw error;
         }
       }
 
-      // Check if account already exists with Supabase
-      const { data: existingAuth, error: signInError } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-      });
-
-      if (existingAuth?.user) {
-        // Account exists, just let them login
-        await supabase.auth.signOut();
-        setError('This email is already registered. Redirecting to login...');
-        setTimeout(() => {
-          setLocation('/user-login');
-        }, 1500);
-        return;
-      }
-
-      // New user signup with Supabase
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
-        options: {
-          data: {
-            name: formData.name,
-            role: 'user'
-          }
-        }
+        options: { data: { name: formData.name, role: 'user' } }
       });
 
       if (authError) throw authError;
 
       if (authData.user) {
-        // Create user profile
         const { error: profileError } = await supabase
           .from('user_profiles')
-          .insert([
-            {
-              user_id: authData.user.id,
-              email: formData.email,
-              name: formData.name,
-              role: 'user'
-            }
-          ]);
+          .insert([{ user_id: authData.user.id, email: formData.email, name: formData.name, role: 'user' }]);
 
         if (profileError) throw profileError;
-
-        // Redirect to user login
+        toast({ title: "Signup Successful", description: "Please log in." });
         setLocation('/user-login');
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to create account. Please try again.');
+      toast({ title: "Signup Failed", description: err.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAzKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-50"></div>
-
-      <div className="relative w-full max-w-md">
-        <Button
-          variant="ghost"
+    <div className="bg-white dark:bg-zinc-950 min-h-screen text-zinc-800 dark:text-zinc-200 selection:bg-zinc-300 dark:selection:bg-zinc-600 relative overflow-hidden flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="absolute top-8 left-8 z-20">
+        <button
           onClick={() => setLocation('/')}
-          className="mb-4 text-slate-300 hover:text-white"
+          className="relative z-0 flex items-center justify-center gap-2 overflow-hidden rounded-md border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-4 py-2 font-semibold text-zinc-700 dark:text-zinc-300 transition-all duration-500 before:absolute before:inset-0 before:-z-10 before:translate-x-[150%] before:translate-y-[150%] before:scale-[2.5] before:rounded-[100%] before:bg-zinc-800 dark:before:bg-zinc-200 before:transition-transform before:duration-1000 before:content-[''] hover:scale-105 hover:text-zinc-100 dark:hover:text-zinc-900 hover:before:translate-x-[0%] hover:before:translate-y-[0%] active:scale-95"
         >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Home
-        </Button>
+          <ChevronLeft size={16} />
+          <span>Go back</span>
+        </button>
+      </div>
 
-        <Card className="bg-slate-900/80 backdrop-blur-xl border-slate-800 shadow-2xl">
-          <CardHeader className="text-center space-y-2">
-            <div className="flex justify-center mb-4">
-              <div className="p-4 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl shadow-lg">
-                <UserCircle className="h-10 w-10 text-white" />
+      <motion.div
+        initial={{ opacity: 0, y: 25 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1.25, ease: "easeInOut" }}
+        className="relative z-10 mx-auto w-full max-w-xl p-4"
+      >
+        <div className="mb-6 flex justify-center items-center">
+          <div className="bg-indigo-600 p-2 rounded-lg shadow-lg shadow-indigo-500/20">
+            <ShieldCheck className="h-8 w-8 text-white" />
+          </div>
+          <span className="ml-2 text-2xl font-black tracking-tighter uppercase">BLOCK<span className="text-indigo-600">TIX</span></span>
+        </div>
+
+        <div className="mb-6 text-center">
+          <h1 className="text-3xl font-bold tracking-tight">Create User Account</h1>
+          <p className="mt-2 text-zinc-500 dark:text-zinc-400">
+            Already have an account?{" "}
+            <button onClick={() => setLocation('/user-login')} className="text-indigo-600 dark:text-indigo-400 hover:underline font-semibold">
+              Sign in.
+            </button>
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-zinc-600 dark:text-zinc-400">Full Name</label>
+            <div className="relative group">
+              <UserCircle className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400 group-focus-within:text-indigo-500 transition-colors" />
+              <input
+                type="text"
+                placeholder="John Doe"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full pl-10 h-11 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-200 ring-1 ring-transparent focus:outline-0 focus:ring-indigo-600 focus:border-indigo-600"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-zinc-600 dark:text-zinc-400">Email Address</label>
+            <div className="relative group">
+              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400 group-focus-within:text-indigo-500 transition-colors" />
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="w-full pl-10 h-11 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-200 ring-1 ring-transparent focus:outline-0 focus:ring-indigo-600 focus:border-indigo-600"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-zinc-600 dark:text-zinc-400">Password</label>
+              <div className="relative group">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400 group-focus-within:text-indigo-500 transition-colors" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="••••••••"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="w-full pl-10 h-11 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-200 ring-1 ring-transparent focus:outline-0 focus:ring-indigo-600 focus:border-indigo-600"
+                  required
+                />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400">
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
             </div>
-            <CardTitle className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-              Create User Account
-            </CardTitle>
-            <CardDescription className="text-slate-400">
-              Join BlockTix to discover and attend amazing events
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {error && (
-                <Alert variant="destructive" className="bg-red-950/50 border-red-900 text-red-200">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="name" className="text-slate-300">Full Name</Label>
-                <div className="relative">
-                  <UserCircle className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-500" />
-                  <Input
-                    id="name"
-                    type="text"
-                    placeholder="John Doe"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-indigo-500"
-                    disabled={loading}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-slate-300">Email</Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-500" />
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-indigo-500"
-                    disabled={loading}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-slate-300">Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-500" />
-                  <Input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder="••••••••"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="pl-10 pr-10 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-indigo-500"
-                    disabled={loading}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                  >
-                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword" className="text-slate-300">Confirm Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-500" />
-                  <Input
-                    id="confirmPassword"
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    placeholder="••••••••"
-                    value={formData.confirmPassword}
-                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                    className="pl-10 pr-10 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-indigo-500"
-                    disabled={loading}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                  >
-                    {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                  </button>
-                </div>
-              </div>
-
-              <Button
-                type="submit"
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-6 shadow-lg hover:shadow-xl transition-all duration-300"
-                disabled={loading}
-              >
-                {loading ? (
-                  <>
-                    <Sparkles className="mr-2 h-5 w-5 animate-spin" />
-                    Creating Account...
-                  </>
-                ) : (
-                  <>
-                    <UserCircle className="mr-2 h-5 w-5" />
-                    Create Account
-                  </>
-                )}
-              </Button>
-
-              <div className="text-center text-sm text-slate-400">
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => setLocation('/user-login')}
-                  className="text-indigo-400 hover:text-indigo-300 font-semibold"
-                >
-                  Sign in
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-zinc-600 dark:text-zinc-400">Confirm</label>
+              <div className="relative group">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400 group-focus-within:text-indigo-500 transition-colors" />
+                <input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  placeholder="••••••••"
+                  value={formData.confirmPassword}
+                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                  className="w-full pl-10 h-11 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-200 ring-1 ring-transparent focus:outline-0 focus:ring-indigo-600 focus:border-indigo-600"
+                  required
+                />
+                <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400">
+                  {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+            </div>
+          </div>
 
-              <div className="text-center text-sm text-slate-500">
-                Are you an organizer?{' '}
-                <button
-                  type="button"
-                  onClick={() => setLocation('/signup')}
-                  className="text-purple-400 hover:text-purple-300 font-semibold"
-                >
-                  Create organizer account
-                </button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full h-11 rounded-md bg-gradient-to-br from-indigo-500 to-indigo-700 text-lg font-bold text-white ring-2 ring-indigo-500/50 ring-offset-2 ring-offset-white dark:ring-offset-zinc-950 transition-all hover:scale-[1.02] hover:ring-transparent active:scale-[0.98] active:ring-indigo-500/70 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
+          >
+            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Sparkles className="h-5 w-5" /> Create Account</>}
+          </button>
+        </form>
+
+        <div className="mt-8 text-center pt-6 border-t border-zinc-200 dark:border-zinc-800 flex flex-col gap-2">
+          <p className="text-zinc-500 dark:text-zinc-400 text-sm">
+            Are you an organizer?{' '}
+            <button onClick={() => setLocation('/signup')} className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline">
+              Create organizer account
+            </button>
+          </p>
+        </div>
+      </motion.div>
+      <BackgroundDecoration />
     </div>
   );
+}
+
+const BackgroundDecoration: React.FC = () => {
+  const { theme } = useTheme()
+  const isDarkTheme = theme === "dark"
+
+  return (
+    <div
+      className="absolute right-0 top-0 z-0 size-[50vw] pointer-events-none"
+      style={{
+        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke-width='2' stroke='rgb(79 70 229 / 0.4)'%3e%3cpath d='M0 .5H31.5V32'/%3e%3c/svg%3e")`,
+      }}
+    >
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage: isDarkTheme
+            ? "radial-gradient(100% 100% at 100% 0%, rgba(9,9,11,0), rgba(9,9,11,1))"
+            : "radial-gradient(100% 100% at 100% 0%, rgba(255,255,255,0), rgba(255,255,255,1))",
+        }}
+      />
+    </div>
+  )
 }
