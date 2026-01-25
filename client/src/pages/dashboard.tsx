@@ -7,6 +7,13 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -26,10 +33,13 @@ import {
   XCircle,
   Sparkles,
   Moon,
-  Sun
+  Sun,
+  UserPlus,
+  Mail,
+  Check,
+  X
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import type { EventAnalytics, TicketTransaction } from '@/lib/supabase';
+import { supabase, type TicketTransaction, type EventAnalytics } from '@/lib/supabase';
 
 interface DashboardStats {
   total_events: number;
@@ -42,10 +52,25 @@ interface DashboardStats {
 }
 
 interface EventPerformance {
+  event_id: string;
+  event_name: string;
   date: string;
   events_created: number;
   tickets_sold: number;
   revenue: number;
+  max_capacity: number;
+  attendees: Array<{wallet: string, name: string, timestamp: string}>;
+}
+
+interface EnrollmentRequest {
+  id: number;
+  event_id: number;
+  event_name: string;
+  requester_email: string;
+  requester_name: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requested_at: string;
+  responded_at?: string;
 }
 
 export default function DashboardPage() {
@@ -53,13 +78,18 @@ export default function DashboardPage() {
   const [events, setEvents] = useState<EventAnalytics[]>([]);
   const [transactions, setTransactions] = useState<TicketTransaction[]>([]);
   const [performance, setPerformance] = useState<EventPerformance[]>([]);
+  const [enrollmentRequests, setEnrollmentRequests] = useState<EnrollmentRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<EventPerformance | null>(null);
+  const [showEventDetails, setShowEventDetails] = useState(false);
+  const [processingRequest, setProcessingRequest] = useState<number | null>(null);
 
   useEffect(() => {
     fetchDashboardData();
-    // Set up real-time subscriptions
+    
+    // Subscribe to real-time updates for both events and tickets
     const eventsSubscription = supabase
       .channel('events_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, 
@@ -67,8 +97,24 @@ export default function DashboardPage() {
       )
       .subscribe();
 
+    const ticketsSubscription = supabase
+      .channel('tickets_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, 
+        () => fetchDashboardData()
+      )
+      .subscribe();
+
+    const requestsSubscription = supabase
+      .channel('enrollment_requests_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'enrollment_requests' }, 
+        () => fetchDashboardData()
+      )
+      .subscribe();
+
     return () => {
       eventsSubscription.unsubscribe();
+      ticketsSubscription.unsubscribe();
+      requestsSubscription.unsubscribe();
     };
   }, []);
 
@@ -77,44 +123,201 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
 
-      // Fetch dashboard stats
-      const { data: statsData, error: statsError } = await supabase
-        .rpc('get_dashboard_stats');
-
-      if (statsError) throw statsError;
-      setStats(statsData?.[0] || null);
-
-      // Fetch event analytics
+      // Fetch dashboard stats from actual tables
       const { data: eventsData, error: eventsError } = await supabase
-        .from('v_event_analytics')
+        .from('events')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(10);
 
-      if (eventsError) throw eventsError;
-      setEvents(eventsData || []);
+      if (eventsError) {
+        console.error('Events fetch error:', eventsError);
+      }
 
-      // Fetch recent transactions
-      const { data: transactionsData, error: transactionsError } = await supabase
-        .from('v_recent_transactions')
-        .select('*')
+      const { data: allTicketsData, error: allTicketsError } = await supabase
+        .from('tickets')
+        .select('*');
+
+      if (allTicketsError) {
+        console.error('Tickets fetch error:', allTicketsError);
+      }
+
+      // Calculate stats from the data
+      const totalTickets = allTicketsData?.length || 0;
+      const verifiedTickets = allTicketsData?.filter(t => t.is_used).length || 0;
+      const totalRevenue = allTicketsData?.reduce((sum, t) => sum + (parseFloat(t.price) || 0), 0) || 0;
+
+      setStats({
+        total_events: eventsData?.length || 0,
+        total_tickets: totalTickets,
+        verified_tickets: verifiedTickets,
+        used_tickets: verifiedTickets,
+        total_revenue: totalRevenue,
+        total_users: new Set(allTicketsData?.map(t => t.attendee_wallet)).size || 0,
+        new_users_week: 0
+      });
+
+      // Transform events data for display
+      const eventAnalytics = (eventsData || []).map(event => ({
+        event_id: event.event_id,
+        event_name: event.event_name,
+        event_date: event.event_date,
+        location: event.location || 'TBA',
+        max_capacity: event.max_capacity || 0,
+        ticket_price: (parseFloat(event.ticket_price) || 0).toString(),
+        tickets_sold: allTicketsData?.filter(t => t.event_id === event.event_id).length || 0,
+        tickets_verified: allTicketsData?.filter(t => t.event_id === event.event_id && t.is_used).length || 0,
+        tickets_used: allTicketsData?.filter(t => t.event_id === event.event_id && t.is_used).length || 0,
+        revenue: allTicketsData?.filter(t => t.event_id === event.event_id)
+          .reduce((sum, t) => sum + (parseFloat(t.price) || 0), 0) || 0,
+        capacity_percentage: ((allTicketsData?.filter(t => t.event_id === event.event_id).length || 0) / (event.max_capacity || 1) * 100).toFixed(1),
+        created_at: event.created_at,
+        organizer_address: event.organizer_address
+      }));
+
+      setEvents(eventAnalytics);
+
+      // Fetch recent transactions from tickets table with event names
+      const { data: recentTicketsData, error: recentTicketsError } = await supabase
+        .from('tickets')
+        .select(`
+          *,
+          events!inner(event_name)
+        `)
+        .order('created_at', { ascending: false })
         .limit(20);
 
-      if (transactionsError) throw transactionsError;
-      setTransactions(transactionsData || []);
+      if (recentTicketsError) {
+        console.error('Tickets error:', recentTicketsError);
+      }
+      
+      // Transform tickets to transaction format
+      const transactionsData: TicketTransaction[] = (recentTicketsData || []).map(ticket => ({
+        id: ticket.id,
+        event_id: ticket.event_id || '',
+        action: ticket.is_used ? 'verified' : 'minted',
+        event_name: ticket.events?.event_name || 'Unknown Event',
+        ticket_id: ticket.token_id?.toString() || ticket.ticket_id?.toString() || '',
+        owner_address: ticket.attendee_wallet || ticket.owner_address || '',
+        transaction_hash: ticket.transaction_hash || '',
+        timestamp: ticket.created_at,
+        price: ticket.price || '0'
+      }));
+      
+      setTransactions(transactionsData);
 
-      // Fetch performance data
-      const { data: performanceData, error: performanceError } = await supabase
-        .rpc('get_event_performance', { days_back: 30 });
+      // Fetch performance data with attendee details
+      const performanceData: EventPerformance[] = await Promise.all(
+        (eventsData || []).map(async (event) => {
+          const { data: eventTickets } = await supabase
+            .from('tickets')
+            .select('*')
+            .eq('event_id', event.event_id);
 
-      if (performanceError) throw performanceError;
-      setPerformance(performanceData || []);
+          const attendees = (eventTickets || []).map(ticket => ({
+            wallet: ticket.attendee_wallet || ticket.owner_address || '',
+            name: ticket.attendee_name || 'Anonymous',
+            timestamp: ticket.created_at
+          }));
+
+          return {
+            event_id: event.event_id,
+            event_name: event.event_name,
+            date: event.event_date || event.created_at,
+            events_created: 1,
+            tickets_sold: eventTickets?.length || 0,
+            revenue: eventTickets?.reduce((sum, t) => sum + (parseFloat(t.price) || 0), 0) || 0,
+            max_capacity: event.max_capacity || 0,
+            attendees
+          };
+        })
+      );
+      
+      setPerformance(performanceData);
+
+      // Fetch enrollment requests
+      const { data: requestsData, error: requestsError } = await supabase
+        .from('enrollment_requests')
+        .select('*')
+        .order('requested_at', { ascending: false });
+
+      if (requestsError) {
+        console.error('Enrollment requests fetch error:', requestsError);
+      } else {
+        setEnrollmentRequests(requestsData || []);
+      }
 
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleApproveRequest = async (request: EnrollmentRequest) => {
+    setProcessingRequest(request.id);
+    try {
+      // Update request status
+      const { error: updateError } = await supabase
+        .from('enrollment_requests')
+        .update({ 
+          status: 'approved',
+          responded_at: new Date().toISOString()
+        })
+        .eq('id', request.id);
+
+      if (updateError) throw updateError;
+
+      // Create ticket email entry
+      const { error: ticketError } = await supabase
+        .from('ticket_emails')
+        .insert({
+          ticket_id: Math.floor(Math.random() * 1000000),
+          event_id: request.event_id,
+          recipient_email: request.requester_email,
+          ticket_owner: request.requester_email,
+          attendee_name: request.requester_name,
+          sent_at: new Date().toISOString(),
+          qr_data: JSON.stringify({
+            eventId: request.event_id,
+            ticketId: Math.floor(Math.random() * 1000000),
+            email: request.requester_email
+          })
+        });
+
+      if (ticketError) throw ticketError;
+
+      alert(`Enrollment approved! Ticket sent to ${request.requester_email}`);
+      fetchDashboardData();
+    } catch (error) {
+      console.error('Error approving request:', error);
+      alert('Failed to approve request. Please try again.');
+    } finally {
+      setProcessingRequest(null);
+    }
+  };
+
+  const handleRejectRequest = async (request: EnrollmentRequest) => {
+    setProcessingRequest(request.id);
+    try {
+      const { error } = await supabase
+        .from('enrollment_requests')
+        .update({ 
+          status: 'rejected',
+          responded_at: new Date().toISOString()
+        })
+        .eq('id', request.id);
+
+      if (error) throw error;
+
+      alert(`Enrollment request from ${request.requester_name} has been rejected.`);
+      fetchDashboardData();
+    } catch (error) {
+      console.error('Error rejecting request:', error);
+      alert('Failed to reject request. Please try again.');
+    } finally {
+      setProcessingRequest(null);
     }
   };
 
@@ -273,21 +476,27 @@ export default function DashboardPage() {
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="events" className="space-y-4">
-          <TabsList className={`grid w-full grid-cols-3 lg:w-[400px] ${darkMode ? 'bg-slate-800' : 'bg-white'}`}>
+          <TabsList className={`grid w-full grid-cols-4 lg:w-[600px] ${darkMode ? 'bg-slate-800' : 'bg-white'}`}>
             <TabsTrigger value="events">Events</TabsTrigger>
+            <TabsTrigger value="requests">
+              Requests
+              {enrollmentRequests.filter(r => r.status === 'pending').length > 0 && (
+                <Badge className="ml-2 bg-red-500">{enrollmentRequests.filter(r => r.status === 'pending').length}</Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="transactions">Transactions</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
           </TabsList>
 
           {/* Events Tab */}
           <TabsContent value="events" className="space-y-4">
-            <Card>
+            <Card className={darkMode ? 'bg-slate-800 border-slate-700' : ''}>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className={`flex items-center gap-2 ${darkMode ? 'text-white' : ''}`}>
                   <BarChart3 className="h-5 w-5 text-indigo-600" />
                   Event Performance
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className={darkMode ? 'text-slate-400' : ''}>
                   Overview of your recent events and their performance
                 </CardDescription>
               </CardHeader>
@@ -295,17 +504,17 @@ export default function DashboardPage() {
                 <ScrollArea className="h-[500px]">
                   <div className="space-y-4">
                     {events.length === 0 ? (
-                      <div className="text-center py-12 text-slate-500">
+                      <div className={`text-center py-12 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
                         <p>No events found. Create your first event to get started!</p>
                       </div>
                     ) : (
                       events.map((event) => (
-                        <Card key={event.event_id} className="border hover:border-indigo-300 dark:hover:border-indigo-700 transition-all">
+                        <Card key={event.event_id} className={`border transition-all ${darkMode ? 'bg-slate-800/50 border-slate-700 hover:border-indigo-600' : 'hover:border-indigo-300'}`}>
                           <CardContent className="pt-6">
                             <div className="flex items-start justify-between mb-4">
                               <div className="flex-1">
-                                <h3 className="text-lg font-semibold mb-1">{event.event_name}</h3>
+                                <h3 className={`text-lg font-semibold mb-1 ${darkMode ? 'text-white' : ''}`}>{event.event_name}</h3>
                                 <div className="flex flex-wrap gap-2 text-sm text-slate-600 dark:text-slate-400">
                                   <span className="flex items-center gap-1">
                                     <Calendar className="h-3 w-3" />
@@ -350,7 +559,35 @@ export default function DashboardPage() {
                               <span className="text-slate-600 dark:text-slate-400">
                                 Organizer: {formatAddress(event.organizer_address)}
                               </span>
-                              <Button variant="outline" size="sm">
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={async () => {
+                                  // Fetch detailed attendee information for this event
+                                  const { data: tickets } = await supabase
+                                    .from('tickets')
+                                    .select('*, events!inner(*)')
+                                    .eq('event_id', event.event_id);
+
+                                  const attendees = tickets?.map(t => ({
+                                    wallet: t.attendee_wallet || t.owner_address,
+                                    name: t.attendee_name || 'Anonymous',
+                                    timestamp: t.created_at
+                                  })) || [];
+
+                                  setSelectedEvent({
+                                    event_id: event.event_id,
+                                    event_name: event.event_name,
+                                    date: event.event_date,
+                                    events_created: 0,
+                                    tickets_sold: event.tickets_sold,
+                                    revenue: event.revenue,
+                                    max_capacity: event.max_capacity || 100,
+                                    attendees
+                                  });
+                                  setShowEventDetails(true);
+                                }}
+                              >
                                 <Eye className="h-3 w-3 mr-1" />
                                 View Details
                               </Button>
@@ -365,15 +602,122 @@ export default function DashboardPage() {
             </Card>
           </TabsContent>
 
+          {/* Enrollment Requests Tab */}
+          <TabsContent value="requests" className="space-y-4">
+            <Card className={darkMode ? 'bg-slate-800 border-slate-700' : ''}>
+              <CardHeader>
+                <CardTitle className={`flex items-center gap-2 ${darkMode ? 'text-white' : ''}`}>
+                  <UserPlus className="h-5 w-5 text-indigo-600" />
+                  Enrollment Requests
+                </CardTitle>
+                <CardDescription className={darkMode ? 'text-slate-400' : ''}>
+                  Review and approve user enrollment requests for your events
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px]">
+                  <div className="space-y-3">
+                    {enrollmentRequests.length === 0 ? (
+                      <div className={`text-center py-12 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        <UserPlus className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p>No enrollment requests yet</p>
+                      </div>
+                    ) : (
+                      enrollmentRequests.map((request) => (
+                        <Card key={request.id} className={`border transition-all ${
+                          darkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-slate-200'
+                        } ${request.status === 'pending' ? 'border-l-4 border-l-yellow-500' : ''}`}>
+                          <CardContent className="pt-6">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <h3 className={`text-lg font-semibold ${darkMode ? 'text-white' : ''}`}>
+                                    {request.requester_name}
+                                  </h3>
+                                  <Badge 
+                                    variant={request.status === 'pending' ? 'default' : 'secondary'}
+                                    className={
+                                      request.status === 'approved' 
+                                        ? 'bg-green-600 text-white' 
+                                        : request.status === 'rejected'
+                                        ? 'bg-red-600 text-white'
+                                        : 'bg-yellow-600 text-white'
+                                    }
+                                  >
+                                    {request.status}
+                                  </Badge>
+                                </div>
+                                <div className={`space-y-1 text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                                  <div className="flex items-center gap-2">
+                                    <Mail className="h-4 w-4" />
+                                    <span>{request.requester_email}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Calendar className="h-4 w-4" />
+                                    <span className="font-medium">{request.event_name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Clock className="h-4 w-4" />
+                                    <span>Requested: {formatDate(request.requested_at)}</span>
+                                  </div>
+                                  {request.responded_at && (
+                                    <div className="flex items-center gap-2">
+                                      <CheckCircle2 className="h-4 w-4" />
+                                      <span>Responded: {formatDate(request.responded_at)}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              {request.status === 'pending' && (
+                                <div className="flex gap-2 ml-4">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleApproveRequest(request)}
+                                    disabled={processingRequest === request.id}
+                                    className="bg-green-600 hover:bg-green-700 text-white"
+                                  >
+                                    {processingRequest === request.id ? (
+                                      'Processing...'
+                                    ) : (
+                                      <>
+                                        <Check className="h-4 w-4 mr-1" />
+                                        Approve
+                                      </>
+                                    )}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleRejectRequest(request)}
+                                    disabled={processingRequest === request.id}
+                                    className={`${darkMode ? 'border-red-700 text-red-400 hover:bg-red-950' : 'border-red-300 text-red-600 hover:bg-red-50'}`}
+                                  >
+                                    <X className="h-4 w-4 mr-1" />
+                                    Reject
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           {/* Transactions Tab */}
           <TabsContent value="transactions" className="space-y-4">
-            <Card>
+            <Card className={darkMode ? 'bg-slate-800 border-slate-700' : ''}>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className={`flex items-center gap-2 ${darkMode ? 'text-white' : ''}`}>
                   <Activity className="h-5 w-5 text-indigo-600" />
                   Recent Transactions
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className={darkMode ? 'text-slate-400' : ''}>
                   Real-time view of all ticket-related activities
                 </CardDescription>
               </CardHeader>
@@ -381,7 +725,7 @@ export default function DashboardPage() {
                 <ScrollArea className="h-[500px]">
                   <div className="space-y-3">
                     {transactions.length === 0 ? (
-                      <div className="text-center py-12 text-slate-500">
+                      <div className={`text-center py-12 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                         <Activity className="h-12 w-12 mx-auto mb-4 opacity-50" />
                         <p>No transactions yet. Transactions will appear here once tickets are minted.</p>
                       </div>
@@ -389,7 +733,9 @@ export default function DashboardPage() {
                       transactions.map((tx) => (
                         <div
                           key={tx.id}
-                          className="flex items-center justify-between p-4 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
+                          className={`flex items-center justify-between p-4 border rounded-lg transition-all ${
+                            darkMode ? 'border-slate-700 hover:bg-slate-800' : 'hover:bg-slate-50'
+                          }`}
                         >
                           <div className="flex items-center gap-4 flex-1">
                             <div className={`p-2 rounded-full ${
@@ -403,12 +749,12 @@ export default function DashboardPage() {
                             </div>
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="font-semibold">{tx.event_name}</span>
+                                <span className={`font-semibold ${darkMode ? 'text-white' : ''}`}>{tx.event_name || 'Ticket'}</span>
                                 <Badge variant="outline" className={getActionColor(tx.action)}>
                                   {tx.action}
                                 </Badge>
                               </div>
-                              <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
+                              <div className={`flex items-center gap-3 text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                                 <span className="flex items-center gap-1">
                                   <Users className="h-3 w-3" />
                                   {formatAddress(tx.owner_address)}
@@ -450,23 +796,23 @@ export default function DashboardPage() {
           {/* Analytics Tab */}
           <TabsContent value="analytics" className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
-              <Card>
+              <Card className={darkMode ? 'bg-slate-800 border-slate-700' : ''}>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
+                  <CardTitle className={`flex items-center gap-2 ${darkMode ? 'text-white' : ''}`}>
                     <TrendingUp className="h-5 w-5 text-indigo-600" />
                     Performance Metrics
                   </CardTitle>
-                  <CardDescription>30-day performance overview</CardDescription>
+                  <CardDescription className={darkMode ? 'text-slate-400' : ''}>30-day performance overview</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
                     {performance.slice(0, 7).map((perf, index) => (
                       <div key={index} className="space-y-2">
                         <div className="flex items-center justify-between text-sm">
-                          <span className="text-slate-600 dark:text-slate-400">
+                          <span className={darkMode ? 'text-slate-400' : 'text-slate-600'}>
                             {new Date(perf.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                           </span>
-                          <span className="font-semibold">{perf.tickets_sold} tickets</span>
+                          <span className={`font-semibold ${darkMode ? 'text-white' : ''}`}>{perf.tickets_sold} tickets</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <Progress 
@@ -483,19 +829,19 @@ export default function DashboardPage() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className={darkMode ? 'bg-slate-800 border-slate-700' : ''}>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
+                  <CardTitle className={`flex items-center gap-2 ${darkMode ? 'text-white' : ''}`}>
                     <Shield className="h-5 w-5 text-indigo-600" />
                     Verification Status
                   </CardTitle>
-                  <CardDescription>Ticket verification overview</CardDescription>
+                  <CardDescription className={darkMode ? 'text-slate-400' : ''}>Ticket verification overview</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-6">
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">Verified Tickets</span>
+                        <span className={`text-sm font-medium ${darkMode ? 'text-white' : ''}`}>Verified Tickets</span>
                         <span className="text-2xl font-bold text-green-600">
                           {stats ? Math.round((stats.verified_tickets / (stats.total_tickets || 1)) * 100) : 0}%
                         </span>
@@ -504,7 +850,7 @@ export default function DashboardPage() {
                         value={stats ? (stats.verified_tickets / (stats.total_tickets || 1)) * 100 : 0} 
                         className="h-3"
                       />
-                      <div className="flex items-center justify-between mt-1 text-xs text-slate-600 dark:text-slate-400">
+                      <div className={`flex items-center justify-between mt-1 text-xs ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                         <span>{stats?.verified_tickets || 0} verified</span>
                         <span>{stats?.total_tickets || 0} total</span>
                       </div>
@@ -514,7 +860,7 @@ export default function DashboardPage() {
 
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">Used Tickets</span>
+                        <span className={`text-sm font-medium ${darkMode ? 'text-white' : ''}`}>Used Tickets</span>
                         <span className="text-2xl font-bold text-purple-600">
                           {stats ? Math.round((stats.used_tickets / (stats.total_tickets || 1)) * 100) : 0}%
                         </span>
@@ -523,7 +869,7 @@ export default function DashboardPage() {
                         value={stats ? (stats.used_tickets / (stats.total_tickets || 1)) * 100 : 0} 
                         className="h-3"
                       />
-                      <div className="flex items-center justify-between mt-1 text-xs text-slate-600 dark:text-slate-400">
+                      <div className={`flex items-center justify-between mt-1 text-xs ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                         <span>{stats?.used_tickets || 0} used</span>
                         <span>{stats?.total_tickets || 0} total</span>
                       </div>
@@ -532,17 +878,17 @@ export default function DashboardPage() {
                     <Separator />
 
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="text-center p-4 bg-green-50 dark:bg-green-950/30 rounded-lg">
+                      <div className={`text-center p-4 rounded-lg ${darkMode ? 'bg-green-950/30' : 'bg-green-50'}`}>
                         <CheckCircle2 className="h-8 w-8 text-green-600 mx-auto mb-2" />
                         <div className="text-2xl font-bold text-green-600">{stats?.verified_tickets || 0}</div>
-                        <div className="text-xs text-slate-600 dark:text-slate-400">Verified</div>
+                        <div className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>Verified</div>
                       </div>
-                      <div className="text-center p-4 bg-slate-50 dark:bg-slate-900 rounded-lg">
+                      <div className={`text-center p-4 rounded-lg ${darkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
                         <XCircle className="h-8 w-8 text-slate-600 mx-auto mb-2" />
                         <div className="text-2xl font-bold text-slate-600">
                           {(stats?.total_tickets || 0) - (stats?.verified_tickets || 0)}
                         </div>
-                        <div className="text-xs text-slate-600 dark:text-slate-400">Pending</div>
+                        <div className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>Pending</div>
                       </div>
                     </div>
                   </div>
@@ -553,7 +899,7 @@ export default function DashboardPage() {
         </Tabs>
 
         {/* Footer Info */}
-        <Card className="border-indigo-200 dark:border-indigo-800 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30">
+        <Card className={`border-indigo-200 bg-gradient-to-r ${darkMode ? 'border-indigo-800 from-indigo-950/30 to-purple-950/30' : 'from-indigo-50 to-purple-50'}`}>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -561,8 +907,8 @@ export default function DashboardPage() {
                   <Activity className="h-4 w-4 text-white" />
                 </div>
                 <div>
-                  <p className="font-semibold">Real-time Updates Active</p>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                  <p className={`font-semibold ${darkMode ? 'text-white' : ''}`}>Real-time Updates Active</p>
+                  <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                     Dashboard automatically updates when new events occur
                   </p>
                 </div>
@@ -575,6 +921,96 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Event Details Dialog */}
+      <Dialog open={showEventDetails} onOpenChange={setShowEventDetails}>
+        <DialogContent className={`max-w-3xl max-h-[80vh] overflow-y-auto ${darkMode ? 'bg-slate-800 border-slate-700' : ''}`}>
+          <DialogHeader>
+            <DialogTitle className={`flex items-center gap-2 ${darkMode ? 'text-white' : ''}`}>
+              <Calendar className="h-5 w-5 text-indigo-600" />
+              {selectedEvent?.event_name || 'Event Details'}
+            </DialogTitle>
+            <DialogDescription className={darkMode ? 'text-slate-400' : ''}>
+              Detailed attendee information for this event
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedEvent && (
+            <div className="space-y-6">
+              {/* Event Summary */}
+              <div className={`grid grid-cols-3 gap-4 p-4 rounded-lg ${darkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-indigo-600">{selectedEvent.tickets_sold}</div>
+                  <div className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>Total Attendees</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">
+                    {Math.round((selectedEvent.tickets_sold / selectedEvent.max_capacity) * 100)}%
+                  </div>
+                  <div className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>Capacity Filled</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-purple-600">{formatCurrency(selectedEvent.revenue)}</div>
+                  <div className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>Revenue</div>
+                </div>
+              </div>
+
+              {/* Attendees List */}
+              <div>
+                <h4 className={`font-semibold mb-3 flex items-center gap-2 ${darkMode ? 'text-white' : ''}`}>
+                  <Users className="h-4 w-4" />
+                  Attendees ({selectedEvent.attendees?.length || 0})
+                </h4>
+                <ScrollArea className="h-[400px] pr-4">
+                  <div className="space-y-3">
+                    {selectedEvent.attendees && selectedEvent.attendees.length > 0 ? (
+                      selectedEvent.attendees.map((attendee, index) => (
+                        <div 
+                          key={index}
+                          className={`flex items-center justify-between p-4 rounded-lg border transition-all ${
+                            darkMode 
+                              ? 'bg-slate-900/50 border-slate-700 hover:border-indigo-600' 
+                              : 'bg-white border-slate-200 hover:border-indigo-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                              darkMode ? 'bg-indigo-900' : 'bg-indigo-100'
+                            }`}>
+                              <Users className="h-5 w-5 text-indigo-600" />
+                            </div>
+                            <div>
+                              <div className={`font-semibold ${darkMode ? 'text-white' : ''}`}>
+                                {attendee.name}
+                              </div>
+                              <div className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                                {formatAddress(attendee.wallet)}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                              Enrolled
+                            </div>
+                            <div className={`text-sm font-medium ${darkMode ? 'text-white' : ''}`}>
+                              {formatDate(attendee.timestamp)}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className={`text-center py-12 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p>No attendees yet for this event</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

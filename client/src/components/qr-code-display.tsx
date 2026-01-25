@@ -19,7 +19,10 @@ export function QRCodeDisplay({ data, title, subtitle, size = 160 }: QRCodeDispl
   // Generate QR code using a simple QR library or service
   const generateQRCode = async () => {
     try {
-      // Using QR Server API as a fallback - in production, use qrcode.js library
+      // Use the data directly as JSON format (no URL)
+      console.log('QR Code Data:', data);
+      
+      // Using QR Server API - in production, use qrcode.js library
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(data)}`;
       setQrCodeUrl(qrUrl);
     } catch (error) {

@@ -128,11 +128,13 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
 
         // Refund excess payment
         if (msg.value > event_.ticketPrice) {
-            payable(msg.sender).transfer(msg.value - event_.ticketPrice);
+            (bool refundSuccess, ) = payable(msg.sender).call{value: msg.value - event_.ticketPrice}("");
+            require(refundSuccess, "Refund failed");
         }
 
         // Send payment to event organizer
-        payable(event_.organizer).transfer(event_.ticketPrice);
+        (bool paymentSuccess, ) = payable(event_.organizer).call{value: event_.ticketPrice}("");
+        require(paymentSuccess, "Payment to organizer failed");
 
         emit TicketMinted(eventId, tokenId, msg.sender, attendeeName);
         return tokenId;
@@ -254,7 +256,8 @@ contract EventTicketing is ERC721, ReentrancyGuard, Ownable {
      * @dev Emergency withdrawal function (only owner)
      */
     function emergencyWithdraw() external onlyOwner {
-        payable(owner()).transfer(address(this).balance);
+        (bool success, ) = payable(owner()).call{value: address(this).balance}("");
+        require(success, "Withdrawal failed");
     }
 
     /**

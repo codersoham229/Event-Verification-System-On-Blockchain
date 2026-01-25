@@ -34,7 +34,9 @@ import {
   Medal,
   Info,
   LogOut,
-  User as UserIcon
+  User as UserIcon,
+  Mail,
+  Send
 } from 'lucide-react';
 
 export default function Home() {
@@ -97,6 +99,11 @@ export default function Home() {
   // QR Scanner state
   const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
   const [qrScanType, setQrScanType] = useState<'event' | 'verify'>('event');
+  
+  // Email sending state
+  const [emailAddresses, setEmailAddresses] = useState<string>('');
+  const [showEmailSection, setShowEmailSection] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   const [activeTab, setActiveTab] = useState('create');
 
@@ -144,15 +151,15 @@ export default function Home() {
         const { error } = await supabase
           .from('events')
           .insert({
-            name: eventForm.name,
-            description: eventForm.description,
-            date: new Date(eventForm.date).toISOString(),
-            location: 'TBA', // You can add a location field to the form if needed
-            total_tickets: parseInt(eventForm.maxTickets),
-            available_tickets: parseInt(eventForm.maxTickets),
-            price: eventForm.ticketPrice,
+            event_id: parseInt(result.eventId),
+            event_name: eventForm.name,
+            event_date: new Date(eventForm.date).toISOString(),
+            location: 'TBA',
+            max_capacity: parseInt(eventForm.maxTickets),
+            ticket_price: parseFloat(eventForm.ticketPrice),
             organizer_address: walletState.address,
-            transaction_hash: result.transactionHash
+            total_tickets_sold: 0,
+            is_active: true
           });
 
         if (error) {
@@ -207,11 +214,12 @@ export default function Home() {
         const { error } = await supabase
           .from('tickets')
           .insert({
-            ticket_id: result.ticketId,
+            ticket_id: parseInt(result.ticketId),
+            token_id: parseInt(result.ticketId),
             event_id: parseInt(ticketForm.eventId),
-            owner: walletState.address,
-            attendee_name: ticketForm.attendeeName,
-            used: false,
+            owner_address: walletState.address,
+            price: parseFloat(ticketPrice),
+            is_used: false,
             transaction_hash: result.transactionHash
           });
 
@@ -233,9 +241,16 @@ export default function Home() {
   const handleVerifyTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    console.log('🔍 Verifying ticket with:', {
+      eventId: verifyForm.eventId,
+      ticketId: verifyForm.ticketId,
+      walletAddress: verifyForm.walletAddress
+    });
+    
     const result = await verifyTicket(verifyForm.eventId, verifyForm.ticketId);
 
     if (result) {
+      console.log('✅ Verification complete:', result);
       // Don't try to load event details to avoid the contract mismatch error
       setVerificationResult({
         ...result,
@@ -244,11 +259,127 @@ export default function Home() {
     }
   };
 
+  // Handle email sending
+  const handleSendEmails = async () => {
+    if (!emailAddresses.trim()) {
+      toast({
+        title: "No Email Addresses",
+        description: "Please enter at least one email address.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!mintedTicket || !mintedTicketId) {
+      toast({
+        title: "No Ticket",
+        description: "Please mint a ticket first.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setSendingEmail(true);
+
+    try {
+      // Parse email addresses (comma or space separated)
+      const emails = emailAddresses
+        .split(/[,\s]+/)
+        .map(email => email.trim())
+        .filter(email => email && email.includes('@'));
+
+      if (emails.length === 0) {
+        toast({
+          title: "Invalid Email",
+          description: "Please enter valid email addresses.",
+          variant: "destructive"
+        });
+        setSendingEmail(false);
+        return;
+      }
+
+      // Store email records in database
+      for (const email of emails) {
+        const { error } = await supabase
+          .from('ticket_emails')
+          .insert({
+            ticket_id: parseInt(mintedTicketId),
+            event_id: parseInt(mintedTicket.eventId),
+            recipient_email: email,
+            ticket_owner: mintedTicket.owner,
+            attendee_name: mintedTicket.attendeeName,
+            sent_at: new Date().toISOString(),
+            qr_data: JSON.stringify({
+              eventId: mintedTicket.eventId,
+              ticketId: mintedTicketId,
+              walletAddress: mintedTicket.owner
+            })
+          });
+
+        if (error) {
+          console.error('Failed to save email record:', error);
+        }
+      }
+
+      toast({
+        title: "Email Information Saved",
+        description: `Ticket details for ${emails.length} email(s) have been recorded. The recipient(s) can access their ticket from their dashboard.`,
+      });
+
+      // Clear form
+      setEmailAddresses('');
+      setShowEmailSection(false);
+      
+    } catch (err) {
+      console.error('Error sending emails:', err);
+      toast({
+        title: "Error",
+        description: "Failed to process email addresses. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
   // Handle QR scan
   const handleQRScan = (data: string) => {
     try {
-      // Parse QR code data
-      // Format: "event:12345" or "event:12345:ticket:67890:wallet:0x789ABC"
+      console.log('📱 Scanned QR code data:', data);
+      
+      // Try to parse as JSON first (new format)
+      try {
+        const parsed = JSON.parse(data);
+        console.log('✅ Parsed QR as JSON:', parsed);
+        
+        if (parsed.eventId) {
+          if (qrScanType === 'event') {
+            setTicketForm(prev => ({ ...prev, eventId: parsed.eventId }));
+            toast({
+              title: "Event QR Scanned",
+              description: `Event ID ${parsed.eventId} loaded`
+            });
+          } else if (qrScanType === 'verify') {
+            setVerifyForm(prev => ({
+              ...prev,
+              eventId: parsed.eventId,
+              ticketId: parsed.ticketId || '',
+              walletAddress: parsed.walletAddress || ''
+            }));
+            toast({
+              title: "Ticket QR Scanned",
+              description: `Event ${parsed.eventId}, Ticket ${parsed.ticketId}`
+            });
+          }
+          setIsQRScannerOpen(false);
+          return;
+        }
+      } catch (e) {
+        // Not JSON, try old format
+        console.log('Not JSON, trying old colon-separated format');
+      }
+      
+      // Fall back to old format: "event:12345:ticket:67890:wallet:0x789ABC"
       if (data.startsWith('event:')) {
         const parts = data.split(':');
         if (qrScanType === 'event') {
@@ -261,13 +392,16 @@ export default function Home() {
             walletAddress: parts[5] || ''
           }));
         }
+        setIsQRScannerOpen(false);
+        toast({
+          title: "QR Code Scanned",
+          description: "Data has been filled in the form."
+        });
+      } else {
+        throw new Error('Unrecognized QR format');
       }
-      setIsQRScannerOpen(false);
-      toast({
-        title: "QR Code Scanned",
-        description: "Data has been filled in the form."
-      });
     } catch (error) {
+      console.error('QR scan error:', error);
       toast({
         title: "Invalid QR Code",
         description: "Could not parse QR code data.",
@@ -276,21 +410,29 @@ export default function Home() {
     }
   };
 
-  // Load event details when eventId changes for ticket form
+  // Don't auto-load event details when typing - it causes error popups
+  // User just needs to enter the correct Event ID to mint
+  /*
   useEffect(() => {
-    if (ticketForm.eventId && ticketForm.eventId !== eventForTicket?.id) {
-      getEvent(ticketForm.eventId).then(event => {
-        if (event) {
-          setEventForTicket(event);
-        }
-      });
+    if (ticketForm.eventId && ticketForm.eventId !== eventForTicket?.id && ticketForm.eventId.length > 0) {
+      const eventIdNum = parseInt(ticketForm.eventId);
+      if (!isNaN(eventIdNum) && eventIdNum > 0) {
+        getEvent(ticketForm.eventId).then(event => {
+          if (event) {
+            setEventForTicket(event);
+          }
+        }).catch(err => {
+          console.log('Event not found yet:', ticketForm.eventId);
+        });
+      }
     }
   }, [ticketForm.eventId]);
+  */
 
-  // Generate QR code data
-  const getEventQRData = (eventId: string) => `event:${eventId}`;
+  // Generate QR code data as JSON for verification page
+  const getEventQRData = (eventId: string) => JSON.stringify({ eventId });
   const getTicketQRData = (eventId: string, ticketId: string, walletAddress: string) => 
-    `event:${eventId}:ticket:${ticketId}:wallet:${walletAddress}`;
+    JSON.stringify({ eventId, ticketId, walletAddress });
 
   const handleLogout = async () => {
     await signOut();
@@ -727,8 +869,90 @@ export default function Home() {
                       <Info className="h-4 w-4" />
                       <AlertDescription className="text-blue-800">
                         This ticket is now in your MetaMask wallet as an NFT. Present the QR code at the event for verification.
+                        <br /><br />
+                        <strong>To verify this ticket:</strong><br />
+                        • Scan the QR code above, OR<br />
+                        • Manually enter: Event ID = <code className="bg-blue-100 px-1 rounded">{mintedTicket.eventId}</code>, Ticket ID = <code className="bg-blue-100 px-1 rounded">{mintedTicketId}</code>
                       </AlertDescription>
                     </Alert>
+
+                    {/* Email Sending Section */}
+                    <Card className="border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 to-purple-50">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-indigo-900">
+                          <Mail className="w-5 h-5" />
+                          <span>Share Ticket via Email</span>
+                        </CardTitle>
+                        <p className="text-slate-600 text-sm">
+                          Send this ticket to recipients via their email addresses
+                        </p>
+                      </CardHeader>
+                      <CardContent>
+                        {!showEmailSection ? (
+                          <Button
+                            onClick={() => setShowEmailSection(true)}
+                            className="w-full bg-indigo-600 hover:bg-indigo-700"
+                          >
+                            <Mail className="w-4 h-4 mr-2" />
+                            Send Ticket to Email Recipients
+                          </Button>
+                        ) : (
+                          <div className="space-y-4">
+                            <div>
+                              <Label htmlFor="emailAddresses" className="text-indigo-900">
+                                Email Addresses
+                              </Label>
+                              <Textarea
+                                id="emailAddresses"
+                                value={emailAddresses}
+                                onChange={(e) => setEmailAddresses(e.target.value)}
+                                placeholder="Enter email addresses separated by commas or spaces&#10;Example: user1@gmail.com, user2@gmail.com, user3@gmail.com"
+                                rows={4}
+                                className="mt-2 bg-white border-indigo-200 focus:border-indigo-500"
+                              />
+                              <p className="text-xs text-slate-500 mt-2">
+                                You can add multiple email addresses separated by commas or spaces
+                              </p>
+                            </div>
+
+                            <div className="flex gap-2">
+                              <Button
+                                onClick={handleSendEmails}
+                                disabled={sendingEmail || !emailAddresses.trim()}
+                                className="flex-1 bg-indigo-600 hover:bg-indigo-700"
+                              >
+                                {sendingEmail ? (
+                                  <>Processing...</>
+                                ) : (
+                                  <>
+                                    <Send className="w-4 h-4 mr-2" />
+                                    Send to Recipients
+                                  </>
+                                )}
+                              </Button>
+                              <Button
+                                onClick={() => {
+                                  setShowEmailSection(false);
+                                  setEmailAddresses('');
+                                }}
+                                variant="outline"
+                                className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+
+                            <Alert className="bg-indigo-100 border-indigo-300">
+                              <Info className="h-4 w-4 text-indigo-700" />
+                              <AlertDescription className="text-indigo-800 text-sm">
+                                Recipients will be able to access their ticket details from their dashboard. 
+                                The ticket QR code and event information will be available for them to view and use.
+                              </AlertDescription>
+                            </Alert>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
                   </div>
                 )}
               </div>
@@ -751,7 +975,7 @@ export default function Home() {
                     <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center mb-6">
                       <Camera className="w-16 h-16 bg-slate-100 rounded-full p-4 mx-auto mb-4 text-slate-400" />
                       <h4 className="font-medium text-slate-900 mb-2">Scan QR Code</h4>
-                      <p className="text-slate-600 text-sm mb-4">Point your camera at the ticket QR code</p>
+                      <p className="text-slate-600 text-sm mb-4">Point your camera at the ticket QR code or upload an image</p>
                       <Button
                         onClick={() => {
                           setQrScanType('verify');
@@ -761,7 +985,7 @@ export default function Home() {
                         data-testid="button-start-qr-scan"
                       >
                         <Camera className="w-4 h-4 mr-2" />
-                        Start Camera
+                        Start Scanner
                       </Button>
                     </div>
 
