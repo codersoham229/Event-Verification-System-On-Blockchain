@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Camera, X, Upload } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import jsQR from 'jsqr';
 
 interface QRScannerProps {
   onScan: (data: string) => void;
@@ -56,18 +57,70 @@ export function QRScanner({ onScan, onClose, isOpen }: QRScannerProps) {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // In a real implementation, you would use a QR code reader library
-    // For now, we'll simulate reading the file
     const reader = new FileReader();
     reader.onload = (e) => {
-      // This is a placeholder - in production, use a QR code decoder library
-      toast({
-        title: "File Upload",
-        description: "QR code file processing is not implemented yet. Please use manual input.",
-        variant: "destructive"
-      });
+      const img = new Image();
+      img.onload = () => {
+        // Create canvas to read image data
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          toast({
+            title: "Error",
+            description: "Failed to process image",
+            variant: "destructive"
+          });
+          return;
+        }
+
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+
+        // Get image data
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        // Decode QR code
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+        if (code) {
+          // Extract just the data part (remove URL if present)
+          let qrData = code.data;
+          
+          // If it's a URL like "http://localhost:5000/verify-ticket?eventId=1&ticketId=2"
+          // Extract the query parameters
+          if (qrData.includes('?')) {
+            const urlParams = new URLSearchParams(qrData.split('?')[1]);
+            const eventId = urlParams.get('eventId');
+            const ticketId = urlParams.get('ticketId');
+            
+            if (eventId && ticketId) {
+              qrData = JSON.stringify({ eventId, ticketId });
+            }
+          }
+          
+          onScan(qrData);
+          handleClose();
+          toast({
+            title: "QR Code Scanned",
+            description: "QR code successfully decoded from image"
+          });
+        } else {
+          toast({
+            title: "No QR Code Found",
+            description: "Could not detect a QR code in the image. Please try another image.",
+            variant: "destructive"
+          });
+        }
+      };
+      img.src = e.target?.result as string;
     };
     reader.readAsDataURL(file);
+    
+    // Reset input to allow re-uploading the same file
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleClose = () => {

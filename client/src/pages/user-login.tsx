@@ -69,9 +69,11 @@ export default function UserLoginPage() {
           duration: 3000
         });
 
-        setTimeout(() => {
-          setLocation('/user-dashboard');
-        }, 1000);
+        // Wait a bit for auth state to propagate before redirecting
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Redirect to user dashboard
+        setLocation('/user-dashboard');
       }
     } catch (err: any) {
       toast({
