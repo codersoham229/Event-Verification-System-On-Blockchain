@@ -6,6 +6,7 @@ import { useTheme } from 'next-themes';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { localAuth } from '@/lib/local-auth';
 import { useToast } from '@/hooks/use-toast';
+import { BackgroundPathsDecoration } from '@/components/ui/background-paths-decoration';
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
@@ -254,7 +255,7 @@ export default function LoginPage() {
           </p>
         </div>
       </motion.div>
-      <BackgroundDecoration />
+      <BackgroundPathsDecoration />
     </div>
   );
 }
@@ -277,25 +278,4 @@ const SocialButton: React.FC<{
   </button>
 )
 
-const BackgroundDecoration: React.FC = () => {
-  const { theme } = useTheme()
-  const isDarkTheme = theme === "dark"
 
-  return (
-    <div
-      className="absolute right-0 top-0 z-0 size-[50vw] pointer-events-none"
-      style={{
-        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke-width='2' stroke='rgb(30 58 138 / 0.5)'%3e%3cpath d='M0 .5H31.5V32'/%3e%3c/svg%3e")`,
-      }}
-    >
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage: isDarkTheme
-            ? "radial-gradient(100% 100% at 100% 0%, rgba(9,9,11,0), rgba(9,9,11,1))"
-            : "radial-gradient(100% 100% at 100% 0%, rgba(255,255,255,0), rgba(255,255,255,1))",
-        }}
-      />
-    </div>
-  )
-}

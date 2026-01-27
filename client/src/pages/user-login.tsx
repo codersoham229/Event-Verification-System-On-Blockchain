@@ -6,6 +6,7 @@ import { useTheme } from 'next-themes';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { localAuth } from '@/lib/local-auth';
 import { useToast } from '@/hooks/use-toast';
+import { BackgroundPathsDecoration } from '@/components/ui/background-paths-decoration';
 
 export default function UserLoginPage() {
   const [, setLocation] = useLocation();
@@ -252,7 +253,7 @@ export default function UserLoginPage() {
         </div>
         {/* End of transparent card wrapper */}
       </motion.div>
-      <BackgroundDecoration />
+      <BackgroundPathsDecoration />
     </div>
   );
 }
