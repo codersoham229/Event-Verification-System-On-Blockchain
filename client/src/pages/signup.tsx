@@ -165,11 +165,11 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="bg-white dark:bg-zinc-950 min-h-screen text-zinc-800 dark:text-zinc-200 selection:bg-zinc-300 dark:selection:bg-zinc-600 relative overflow-hidden flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="bg-background min-h-screen text-foreground selection:bg-primary/30 relative overflow-hidden flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="absolute top-8 left-8 z-20">
         <button
           onClick={() => setLocation('/')}
-          className="relative z-0 flex items-center justify-center gap-2 overflow-hidden rounded-md border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-4 py-2 font-semibold text-zinc-700 dark:text-zinc-300 transition-all duration-500 before:absolute before:inset-0 before:-z-10 before:translate-x-[150%] before:translate-y-[150%] before:scale-[2.5] before:rounded-[100%] before:bg-zinc-800 dark:before:bg-zinc-200 before:transition-transform before:duration-1000 before:content-[''] hover:scale-105 hover:text-zinc-100 dark:hover:text-zinc-900 hover:before:translate-x-[0%] hover:before:translate-y-[0%] active:scale-95"
+          className="relative z-0 flex items-center justify-center gap-2 overflow-hidden rounded-md border border-border bg-card px-4 py-2 font-semibold text-foreground transition-all duration-500 hover:scale-105 hover:text-primary active:scale-95"
         >
           <ChevronLeft size={16} />
           <span>Go back</span>
@@ -183,17 +183,20 @@ export default function SignUpPage() {
         className="relative z-10 mx-auto w-full max-w-xl p-4"
       >
         <div className="mb-6 flex justify-center items-center">
-          <div className="bg-blue-600 p-2 rounded-lg">
-            <ShieldCheck className="h-8 w-8 text-white" />
+          <div className="bg-primary/20 p-2 rounded-lg border border-primary/30 shadow-glow shadow-primary/10">
+            <ShieldCheck className="h-8 w-8 text-primary" />
           </div>
-          <span className="ml-2 text-2xl font-black tracking-tighter uppercase">BLOCK<span className="text-blue-600">TIX</span></span>
+          <span className="ml-2 text-3xl font-semibold font-bitcount tracking-normal">
+            <span className="text-white">BLOCK</span>
+            <span className="text-primary">TIX</span>
+          </span>
         </div>
 
         <div className="mb-6 text-center">
-          <h1 className="text-3xl font-bold tracking-tight">Create Organizer Account</h1>
-          <p className="mt-2 text-zinc-500 dark:text-zinc-400">
+          <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Create Organizer Account</h1>
+          <p className="text-muted-foreground">
             Already have an account?{" "}
-            <button onClick={() => setLocation('/login')} className="text-blue-600 dark:text-blue-400 hover:underline">
+            <button onClick={() => setLocation('/login')} className="text-primary hover:underline font-bold">
               Sign in.
             </button>
           </p>
@@ -201,11 +204,11 @@ export default function SignUpPage() {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label htmlFor="name" className="mb-1.5 block text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+            <label htmlFor="name" className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
               Full Name
             </label>
             <div className="relative group">
-              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
+              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
               <input
                 id="name"
                 name="name"
@@ -213,19 +216,19 @@ export default function SignUpPage() {
                 placeholder="John Doe"
                 value={formData.name}
                 onChange={handleInputChange}
-                className={`w-full pl-10 h-11 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 dark:placeholder-zinc-500 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-blue-600 focus:border-blue-600 ${errors.name ? 'border-red-500 focus:ring-red-500' : ''}`}
+                className={`w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background ${errors.name ? 'border-destructive focus:ring-destructive' : ''}`}
                 required
               />
             </div>
-            {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
+            {errors.name && <p className="mt-1 text-xs text-destructive font-medium">{errors.name}</p>}
           </div>
 
           <div>
-            <label htmlFor="email" className="mb-1.5 block text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+            <label htmlFor="email" className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
               Email Address
             </label>
             <div className="relative group">
-              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
+              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
               <input
                 id="email"
                 name="email"
@@ -233,20 +236,20 @@ export default function SignUpPage() {
                 placeholder="organizer@example.com"
                 value={formData.email}
                 onChange={handleInputChange}
-                className={`w-full pl-10 h-11 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 dark:placeholder-zinc-500 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-blue-600 focus:border-blue-600 ${errors.email ? 'border-red-500 focus:ring-red-500' : ''}`}
+                className={`w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background ${errors.email ? 'border-destructive focus:ring-destructive' : ''}`}
                 required
               />
             </div>
-            {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email}</p>}
+            {errors.email && <p className="mt-1 text-xs text-destructive font-medium">{errors.email}</p>}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="password" className="mb-1.5 block text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="password" className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
                 Password
               </label>
               <div className="relative group">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
                 <input
                   id="password"
                   name="password"
@@ -254,19 +257,19 @@ export default function SignUpPage() {
                   placeholder="••••••••"
                   value={formData.password}
                   onChange={handleInputChange}
-                  className={`w-full pl-10 h-11 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 dark:placeholder-zinc-500 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-blue-600 focus:border-blue-600 ${errors.password ? 'border-red-500 focus:ring-red-500' : ''}`}
+                  className={`w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background ${errors.password ? 'border-destructive focus:ring-destructive' : ''}`}
                   required
                 />
               </div>
-              {errors.password && <p className="mt-1 text-xs text-red-500">{errors.password}</p>}
+              {errors.password && <p className="mt-1 text-xs text-destructive font-medium">{errors.password}</p>}
             </div>
 
             <div>
-              <label htmlFor="confirmPassword" className="mb-1.5 block text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="confirmPassword" className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
                 Confirm
               </label>
               <div className="relative group">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
                 <input
                   id="confirmPassword"
                   name="confirmPassword"
@@ -274,17 +277,17 @@ export default function SignUpPage() {
                   placeholder="••••••••"
                   value={formData.confirmPassword}
                   onChange={handleInputChange}
-                  className={`w-full pl-10 h-11 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 dark:placeholder-zinc-500 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-blue-600 focus:border-blue-600 ${errors.confirmPassword ? 'border-red-500 focus:ring-red-500' : ''}`}
+                  className={`w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background ${errors.confirmPassword ? 'border-destructive focus:ring-destructive' : ''}`}
                   required
                 />
               </div>
-              {errors.confirmPassword && <p className="mt-1 text-xs text-red-500">{errors.confirmPassword}</p>}
+              {errors.confirmPassword && <p className="mt-1 text-xs text-destructive font-medium">{errors.confirmPassword}</p>}
             </div>
           </div>
 
-          <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/50 rounded-md p-3 flex gap-3">
-            <CheckCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-            <p className="text-sm text-blue-800 dark:text-blue-200">
+          <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 flex gap-3">
+            <CheckCircle className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+            <p className="text-sm text-primary font-medium leading-relaxed">
               By creating an account, you'll be able to create events, manage tickets, and access real-time blockchain-verified analytics.
             </p>
           </div>
@@ -292,7 +295,7 @@ export default function SignUpPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full h-11 rounded-md bg-gradient-to-br from-blue-500 to-blue-700 text-lg font-bold text-white ring-2 ring-blue-500/50 ring-offset-2 ring-offset-white dark:ring-offset-zinc-950 transition-all hover:scale-[1.02] hover:ring-transparent active:scale-[0.98] active:ring-blue-500/70 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"
+            className="w-full h-12 rounded-lg bg-primary text-lg font-bold text-primary-foreground transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-glow shadow-primary/20"
           >
             {loading ? (
               <>
@@ -308,23 +311,23 @@ export default function SignUpPage() {
           </button>
         </form>
 
-        <div className="mt-8 text-center pt-6 border-t border-zinc-200 dark:border-zinc-800">
-          <p className="text-zinc-500 dark:text-zinc-400 text-sm">
+        <div className="mt-8 text-center pt-6 border-t border-border flex flex-col gap-2">
+          <p className="text-muted-foreground text-sm font-medium">
             Looking for user account?{' '}
             <button
               onClick={() => setLocation('/user-signup')}
-              className="text-blue-600 dark:text-blue-400 font-bold hover:underline transition-colors"
+              className="text-primary font-bold hover:underline transition-colors"
             >
               User Signup
             </button>
           </p>
         </div>
 
-        <p className="mt-8 text-center text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="mt-8 text-center text-xs text-muted-foreground font-medium uppercase tracking-widest">
           By signing up, you agree to our{" "}
-          <a href="#" className="text-blue-600 dark:text-blue-400 font-medium">Terms & Conditions</a>
+          <a href="#" className="text-primary hover:underline font-bold">Terms & Conditions</a>
           {" "}and{" "}
-          <a href="#" className="text-blue-600 dark:text-blue-400 font-medium">Privacy Policy</a>
+          <a href="#" className="text-primary hover:underline font-bold">Privacy Policy</a>
         </p>
       </motion.div>
       <BackgroundDecoration />

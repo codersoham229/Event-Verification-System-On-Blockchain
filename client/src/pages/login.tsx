@@ -123,7 +123,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="bg-white dark:bg-zinc-950 min-h-screen text-zinc-800 dark:text-zinc-200 selection:bg-zinc-300 dark:selection:bg-zinc-600 relative overflow-hidden flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="bg-background min-h-screen text-foreground selection:bg-primary/30 relative overflow-hidden flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="absolute top-8 left-8 z-20">
         <SocialButton onClick={() => setLocation('/')} icon={<ChevronLeft size={16} />}>Go back</SocialButton>
       </div>
@@ -135,17 +135,20 @@ export default function LoginPage() {
         className="relative z-10 mx-auto w-full max-w-xl p-4"
       >
         <div className="mb-6 flex justify-center items-center">
-          <div className="bg-blue-600 p-2 rounded-lg">
-            <ShieldCheck className="h-8 w-8 text-white" />
+          <div className="bg-primary/20 p-2 rounded-lg border border-primary/30 shadow-glow shadow-primary/10">
+            <ShieldCheck className="h-8 w-8 text-primary" />
           </div>
-          <span className="ml-2 text-2xl font-black tracking-tighter uppercase">BLOCK<span className="text-blue-600">TIX</span></span>
+          <span className="ml-2 text-3xl font-semibold font-bitcount tracking-normal">
+            <span className="text-white">BLOCK</span>
+            <span className="text-primary">TIX</span>
+          </span>
         </div>
 
         <div className="mb-6 text-center">
-          <h1 className="text-3xl font-bold tracking-tight">Login to Dashboard</h1>
-          <p className="mt-2 text-zinc-500 dark:text-zinc-400">
+          <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Login to Dashboard</h1>
+          <p className="text-muted-foreground">
             Don't have an organizer account?{" "}
-            <button onClick={() => setLocation('/signup')} className="text-blue-600 dark:text-blue-400 hover:underline">
+            <button onClick={() => setLocation('/signup')} className="text-primary hover:underline font-bold">
               Create one.
             </button>
           </p>
@@ -153,11 +156,11 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label htmlFor="email" className="mb-1.5 block text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+            <label htmlFor="email" className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
               Email Address
             </label>
             <div className="relative group">
-              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
+              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
               <input
                 id="email"
                 name="email"
@@ -165,10 +168,7 @@ export default function LoginPage() {
                 placeholder="organizer@example.com"
                 value={formData.email}
                 onChange={handleInputChange}
-                className="w-full pl-10 h-11 rounded-md border border-zinc-300 dark:border-zinc-700 
-                bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-200
-                placeholder-zinc-400 dark:placeholder-zinc-500 
-                ring-1 ring-transparent transition-all focus:outline-0 focus:ring-blue-600 focus:border-blue-600"
+                className="w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background"
                 required
               />
             </div>
@@ -176,19 +176,19 @@ export default function LoginPage() {
 
           <div>
             <div className="mb-1.5 flex items-center justify-between">
-              <label htmlFor="password" className="block text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="password" className="block text-xs font-bold uppercase tracking-widest text-muted-foreground">
                 Password
               </label>
               <button
                 type="button"
                 onClick={handleForgotPassword}
-                className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-500 transition-colors"
+                className="text-xs font-bold text-primary hover:text-primary/80 transition-colors uppercase tracking-widest"
               >
                 Forgot?
               </button>
             </div>
             <div className="relative group">
-              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-zinc-400 group-focus-within:text-blue-500 transition-colors" />
+              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
               <input
                 id="password"
                 name="password"
@@ -196,10 +196,7 @@ export default function LoginPage() {
                 placeholder="••••••••••••"
                 value={formData.password}
                 onChange={handleInputChange}
-                className="w-full pl-10 h-11 rounded-md border border-zinc-300 dark:border-zinc-700 
-                bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-200
-                placeholder-zinc-400 dark:placeholder-zinc-500 
-                ring-1 ring-transparent transition-all focus:outline-0 focus:ring-blue-600 focus:border-blue-600"
+                className="w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background"
                 required
               />
             </div>
@@ -211,9 +208,9 @@ export default function LoginPage() {
               type="checkbox"
               checked={formData.rememberMe}
               onChange={(e) => setFormData(prev => ({ ...prev, rememberMe: e.target.checked }))}
-              className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800"
+              className="h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary/50"
             />
-            <label htmlFor="rememberMe" className="ml-2 block text-sm text-zinc-500 dark:text-zinc-400">
+            <label htmlFor="rememberMe" className="ml-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
               Remember me
             </label>
           </div>
@@ -221,9 +218,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full h-11 rounded-md bg-gradient-to-br from-blue-500 to-blue-700 text-lg font-bold text-white 
-            ring-2 ring-blue-500/50 ring-offset-2 ring-offset-white dark:ring-offset-zinc-950 
-            transition-all hover:scale-[1.02] hover:ring-transparent active:scale-[0.98] active:ring-blue-500/70 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"
+            className="w-full h-12 rounded-lg bg-primary text-lg font-bold text-primary-foreground transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-glow shadow-primary/20"
           >
             {loading ? (
               <>
@@ -239,23 +234,23 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div className="mt-8 text-center pt-6 border-t border-zinc-200 dark:border-zinc-800">
-          <p className="text-zinc-500 dark:text-zinc-400 text-sm">
+        <div className="mt-8 text-center pt-6 border-t border-border flex flex-col gap-2">
+          <p className="text-muted-foreground text-sm font-medium">
             Looking for user account?{' '}
             <button
               onClick={() => setLocation('/user-login')}
-              className="text-blue-600 dark:text-blue-400 font-bold hover:underline transition-colors"
+              className="text-primary font-bold hover:underline transition-colors"
             >
               User Login
             </button>
           </p>
         </div>
 
-        <p className="mt-8 text-center text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="mt-8 text-center text-xs text-muted-foreground font-medium uppercase tracking-widest">
           By signing in, you agree to our{" "}
-          <a href="#" className="text-blue-600 dark:text-blue-400 font-medium">Terms & Conditions</a>
+          <a href="#" className="text-primary hover:underline font-bold">Terms & Conditions</a>
           {" "}and{" "}
-          <a href="#" className="text-blue-600 dark:text-blue-400 font-medium">Privacy Policy</a>
+          <a href="#" className="text-primary hover:underline font-bold">Privacy Policy</a>
         </p>
       </motion.div>
       <BackgroundDecoration />
@@ -271,12 +266,9 @@ const SocialButton: React.FC<{
 }> = ({ icon, fullWidth, children, onClick }) => (
   <button
     onClick={onClick}
-    className={`relative z-0 flex items-center justify-center gap-2 overflow-hidden rounded-md 
-    border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 
-    px-4 py-2 font-semibold text-zinc-700 dark:text-zinc-300 transition-all duration-500
-    before:absolute before:inset-0 before:-z-10 before:translate-x-[150%] before:translate-y-[150%] before:scale-[2.5]
-    before:rounded-[100%] before:bg-zinc-800 dark:before:bg-zinc-200 before:transition-transform before:duration-1000 before:content-[""]
-    hover:scale-105 hover:text-zinc-100 dark:hover:text-zinc-900 hover:before:translate-x-[0%] hover:before:translate-y-[0%] active:scale-95
+    className={`relative z-0 flex items-center justify-center gap-2 overflow-hidden rounded-lg 
+    border border-border bg-card px-4 py-3 font-bold text-foreground transition-all duration-300
+    hover:scale-105 hover:text-primary active:scale-95 shadow-glow shadow-primary/5
     ${fullWidth ? "col-span-2" : ""}`}
   >
     {icon}

@@ -49,29 +49,29 @@ export default function LandingPage() {
       icon: Shield,
       title: 'Blockchain Security',
       description: 'Military-grade encryption on Ethereum blockchain with immutable records.',
-      color: 'from-blue-500 to-cyan-500',
-      gradient: 'bg-gradient-to-br from-blue-500/20 to-cyan-500/20'
+      color: 'from-primary/80 to-primary',
+      gradient: 'bg-primary/10 border-primary/20'
     },
     {
       icon: QrCode,
       title: 'Instant Verification',
       description: 'Real-time QR code scanning with sub-second validation at entry points.',
-      color: 'from-purple-500 to-pink-500',
-      gradient: 'bg-gradient-to-br from-purple-500/20 to-pink-500/20'
+      color: 'from-primary/60 to-primary/40',
+      gradient: 'bg-primary/5 border-primary/10'
     },
     {
       icon: Zap,
       title: 'Lightning Fast',
       description: 'Create and distribute thousands of tickets in seconds, not hours.',
-      color: 'from-orange-500 to-red-500',
-      gradient: 'bg-gradient-to-br from-orange-500/20 to-red-500/20'
+      color: 'from-primary to-primary/80',
+      gradient: 'bg-primary/10 border-primary/20'
     },
     {
       icon: BarChart3,
       title: 'Advanced Analytics',
       description: 'Real-time dashboards with insights on sales, attendance, and revenue.',
-      color: 'from-green-500 to-emerald-500',
-      gradient: 'bg-gradient-to-br from-green-500/20 to-emerald-500/20'
+      color: 'from-primary/90 to-primary/70',
+      gradient: 'bg-primary/10 border-primary/20'
     }
   ];
 
@@ -85,19 +85,19 @@ export default function LandingPage() {
   ];
 
   const stats = [
-    { label: 'Active Organizers', value: '10K+', icon: Users, color: 'from-blue-500 to-cyan-500' },
-    { label: 'Tickets Issued', value: '500K+', icon: Ticket, color: 'from-purple-500 to-pink-500' },
-    { label: 'Countries', value: '50+', icon: Globe, color: 'from-green-500 to-emerald-500' },
-    { label: 'Uptime', value: '99.9%', icon: Award, color: 'from-orange-500 to-red-500' }
+    { label: 'Active Organizers', value: '10K+', icon: Users, color: 'from-primary/80 to-primary' },
+    { label: 'Tickets Issued', value: '500K+', icon: Ticket, color: 'from-primary/60 to-primary' },
+    { label: 'Countries', value: '50+', icon: Globe, color: 'from-primary to-primary/70' },
+    { label: 'Uptime', value: '99.9%', icon: Award, color: 'from-primary/90 to-primary' }
   ];
 
   return (
     <div className="min-h-screen bg-black text-white overflow-hidden">
       {/* Animated Grid Background */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <BackgroundBeams className="opacity-40" />
+        <BackgroundBeams className="opacity-20" />
         <div className="absolute inset-0" style={{
-          backgroundImage: `radial-gradient(circle at 1px 1px, rgb(59 130 246 / 0.25) 1px, transparent 0)`,
+          backgroundImage: `radial-gradient(circle at 1px 1px, hsl(var(--primary) / 0.15) 1px, transparent 0)`,
           backgroundSize: '40px 40px',
           transform: `translateY(${scrollY * 0.5}px)`
         }}></div>
@@ -127,13 +127,13 @@ export default function LandingPage() {
                     borderWidth={2.5}
                   />
                   <div
-                    className="relative bg-slate-900/50 backdrop-blur-xl border border-slate-800/50 rounded-2xl p-6 hover:border-blue-500/20 transition-all duration-300 group-hover:scale-[1.02]"
+                    className="relative bg-card/40 backdrop-blur-xl border border-border/50 rounded-2xl p-6 hover:border-primary/30 transition-all duration-300 group-hover:scale-[1.02] shadow-glow shadow-primary/5"
                   >
-                    <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${stat.color} mb-3 shadow-lg group-hover:scale-110 transition-transform`}>
-                      <stat.icon className="h-6 w-6 text-white" />
+                    <div className={`inline-flex p-3 rounded-xl bg-primary/20 border border-primary/30 mb-3 shadow-glow shadow-primary/10 group-hover:scale-110 transition-transform`}>
+                      <stat.icon className="h-6 w-6 text-primary" />
                     </div>
-                    <div className="text-3xl font-black text-white mb-1">{stat.value}</div>
-                    <div className="text-sm text-slate-400 font-medium">{stat.label}</div>
+                    <div className="text-3xl font-semibold text-white mb-1 font-bitcount tracking-normal">{stat.value}</div>
+                    <div className="text-xs text-muted-foreground font-bold uppercase tracking-widest">{stat.label}</div>
                   </div>
                 </div>
               ))}
@@ -149,9 +149,9 @@ export default function LandingPage() {
               'Decentralized',
               'Secure by Design'
             ].map((badge, index) => (
-              <div key={index} className="flex items-center gap-2 px-4 py-2 bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-full">
-                <CheckCircle className="h-4 w-4 text-green-400" />
-                <span className="text-sm text-slate-300 font-medium">{badge}</span>
+              <div key={index} className="flex items-center gap-2 px-4 py-2 bg-card/40 backdrop-blur-sm border border-border/50 rounded-full shadow-glow shadow-primary/5">
+                <CheckCircle className="h-4 w-4 text-primary" />
+                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{badge}</span>
               </div>
             ))}
           </div>
@@ -159,17 +159,17 @@ export default function LandingPage() {
       </section>
 
       {/* Features Section */}
-      <section id="features" className="relative z-10 py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-transparent via-slate-900/30 to-transparent">
+      <section id="features" className="relative z-10 py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-transparent via-primary/5 to-transparent">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <Badge className="mb-4 px-4 py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-purple-400/30 text-white">
-              <Star className="mr-2 h-4 w-4" />
+            <Badge className="mb-4 px-4 py-1.5 bg-primary/20 border-primary/30 text-primary font-bold uppercase tracking-widest text-xs">
+              <Star className="mr-2 h-3 w-3" />
               Premium Features
             </Badge>
-            <h2 className="text-4xl md:text-5xl font-black mb-4 text-white">
+            <h2 className="text-4xl md:text-5xl font-semibold mb-4 text-white font-bitcount tracking-normal">
               Everything You Need
             </h2>
-            <p className="text-lg text-slate-400 max-w-2xl mx-auto">
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               Enterprise-grade tools for modern event management
             </p>
           </div>
@@ -186,14 +186,14 @@ export default function LandingPage() {
                   borderWidth={2.5}
                 />
                 <Card
-                  className="group relative h-full bg-slate-950/80 backdrop-blur-xl border-slate-800/50 hover:border-blue-500/20 transition-all duration-500 overflow-hidden"
+                  className="group relative h-full bg-card/60 backdrop-blur-xl border-border/50 hover:border-primary/50 transition-all duration-500 overflow-hidden"
                 >
-                  <CardContent className="relative p-6 pt-6">
-                    <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${feature.color} mb-4 shadow-xl group-hover:scale-110 transition-transform duration-300`}>
-                      <feature.icon className="h-6 w-6 text-white" />
+                  <CardContent className="relative p-6 pt-6 text-center">
+                    <div className={`inline-flex p-3 rounded-xl bg-primary/20 border border-primary/30 mb-4 shadow-glow shadow-primary/10 group-hover:scale-110 transition-transform duration-300`}>
+                      <feature.icon className="h-6 w-6 text-primary" />
                     </div>
                     <h3 className="text-xl font-bold text-white mb-2">{feature.title}</h3>
-                    <p className="text-sm text-slate-400 leading-relaxed">{feature.description}</p>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{feature.description}</p>
                   </CardContent>
                 </Card>
               </div>
@@ -207,37 +207,29 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
-              <Badge className="mb-6 px-4 py-2 bg-gradient-to-r from-green-500/20 to-emerald-500/20 border-green-400/30 text-white">
-                <CheckCircle className="mr-2 h-4 w-4" />
+              <Badge className="mb-6 px-4 py-1.5 bg-primary/20 border-primary/30 text-primary font-bold uppercase tracking-widest text-xs">
+                <CheckCircle className="mr-2 h-3 w-3" />
                 Why BlockTix
               </Badge>
-              <h2 className="text-4xl md:text-5xl font-black mb-6 text-white">
+              <h2 className="text-4xl md:text-5xl font-semibold mb-6 text-white font-bitcount tracking-normal">
                 Built for Scale & Security
               </h2>
-              <p className="text-lg text-slate-300 mb-8 leading-relaxed">
+              <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
                 Revolutionary blockchain technology meets intuitive event management.
                 Experience unmatched security, transparency, and reliability at every step.
               </p>
 
               <div className="grid grid-cols-2 gap-4 mb-8">
                 {benefits.map((benefit, index) => (
-                  <div key={index} className="flex items-center gap-3 p-4 bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl hover:border-blue-500/50 transition-all group">
-                    <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <benefit.icon className="h-5 w-5 text-white" />
+                  <div key={index} className="flex items-center gap-3 p-4 bg-card/40 backdrop-blur-sm border border-border/50 rounded-xl hover:border-primary/50 transition-all group shadow-glow shadow-primary/5">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <benefit.icon className="h-5 w-5 text-primary" />
                     </div>
-                    <span className="text-sm text-slate-300 font-medium">{benefit.text}</span>
+                    <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{benefit.text}</span>
                   </div>
                 ))}
               </div>
 
-              <Button
-                size="lg"
-                onClick={() => setLocation('/signup')}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold px-8 py-6 shadow-lg flex items-center justify-center gap-2"
-              >
-                Get Started Free
-                <ArrowRight className="h-4 w-4" />
-              </Button>
             </div>
 
             <div className="relative">
@@ -278,16 +270,16 @@ export default function LandingPage() {
                       borderWidth={2}
                     />
                     <div
-                      className="relative flex items-center gap-4 p-6 bg-slate-950/80 backdrop-blur-xl border border-slate-800/50 rounded-[1.25rem] group-hover:border-blue-500/20 transition-all group-hover:scale-[1.02]"
+                      className="relative flex items-center gap-4 p-6 bg-card/60 backdrop-blur-xl border border-border/50 rounded-[1.25rem] group-hover:border-primary/50 transition-all group-hover:scale-[1.02] shadow-glow shadow-primary/5"
                     >
-                      <div className={`flex-shrink-0 w-14 h-14 rounded-xl bg-gradient-to-br ${item.color} flex items-center justify-center shadow-xl`}>
-                        <item.icon className="h-7 w-7 text-white" />
+                      <div className={`flex-shrink-0 w-14 h-14 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center`}>
+                        <item.icon className="h-7 w-7 text-primary" />
                       </div>
                       <div className="flex-1">
                         <div className="font-bold text-white text-lg mb-1">{item.title}</div>
-                        <div className="text-sm text-slate-400">{item.desc}</div>
+                        <div className="text-sm text-muted-foreground">{item.desc}</div>
                       </div>
-                      <CheckCircle className="h-6 w-6 text-green-400 flex-shrink-0" />
+                      <CheckCircle className="h-6 w-6 text-primary flex-shrink-0" />
                     </div>
                   </div>
                 ))}
@@ -298,24 +290,24 @@ export default function LandingPage() {
       </section>
 
       {/* How It Works */}
-      <section id="how-it-works" className="relative z-10 py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-transparent via-indigo-950/30 to-transparent">
+      <section id="how-it-works" className="relative z-10 py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-transparent via-primary/5 to-transparent">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <Badge className="mb-4 px-4 py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-blue-400/30 text-white">
-              <Play className="mr-2 h-4 w-4" />
+            <Badge className="mb-4 px-4 py-1.5 bg-primary/20 border-primary/30 text-primary font-bold uppercase tracking-widest text-xs">
+              <Play className="mr-2 h-3 w-3" />
               Simple Process
             </Badge>
-            <h2 className="text-4xl md:text-5xl font-black mb-4 text-white">
+            <h2 className="text-4xl md:text-5xl font-semibold mb-4 text-white font-bitcount tracking-normal">
               How It Works
             </h2>
-            <p className="text-lg text-slate-400 max-w-2xl mx-auto">
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               Get started in three simple steps
             </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8 relative">
             {/* Connection Lines */}
-            <div className="hidden md:block absolute top-24 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 z-0"></div>
+            <div className="hidden md:block absolute top-24 left-0 right-0 h-0.5 bg-gradient-to-r from-primary/20 via-primary/40 to-primary/20 z-0"></div>
 
             {[
               {
@@ -323,21 +315,18 @@ export default function LandingPage() {
                 title: 'Create Event',
                 description: 'Set up your event with all details, pricing, and ticket limits in minutes',
                 icon: Ticket,
-                color: 'from-blue-500 to-cyan-500'
               },
               {
                 step: '02',
                 title: 'Mint Tickets',
                 description: 'Generate blockchain-secured NFT tickets for your attendees automatically',
                 icon: Shield,
-                color: 'from-purple-500 to-pink-500'
               },
               {
                 step: '03',
                 title: 'Verify Entry',
                 description: 'Scan QR codes to verify tickets instantly at your event entrance',
                 icon: CheckCircle,
-                color: 'from-green-500 to-emerald-500'
               }
             ].map((item, index) => (
               <div key={index} className="relative rounded-[1.25rem] p-1 group">
@@ -349,15 +338,15 @@ export default function LandingPage() {
                   inactiveZone={0.01}
                   borderWidth={2}
                 />
-                <div className="relative h-full bg-slate-950/80 backdrop-blur-xl border border-slate-800/50 rounded-[1.25rem] p-8 group-hover:border-blue-500/20 transition-all group-hover:scale-[1.02]">
+                <div className="relative h-full bg-card/60 backdrop-blur-xl border border-border/50 rounded-[1.25rem] p-8 group-hover:border-primary/50 transition-all group-hover:scale-[1.02] shadow-glow shadow-primary/5">
                   <div className="flex items-center justify-between mb-6">
-                    <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${item.color} flex items-center justify-center shadow-2xl group-hover:scale-110 transition-transform`}>
-                      <item.icon className="h-8 w-8 text-white" />
+                    <div className={`w-16 h-16 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center shadow-glow shadow-primary/10 group-hover:scale-110 transition-transform`}>
+                      <item.icon className="h-8 w-8 text-primary" />
                     </div>
-                    <span className="text-6xl font-black text-slate-800 group-hover:text-slate-700 transition-colors">{item.step}</span>
+                    <span className="text-6xl font-semibold text-white/5 group-hover:text-primary/10 transition-colors font-bitcount tracking-normal">{item.step}</span>
                   </div>
                   <h3 className="text-2xl font-bold text-white mb-3">{item.title}</h3>
-                  <p className="text-slate-400 leading-relaxed">{item.description}</p>
+                  <p className="text-muted-foreground leading-relaxed">{item.description}</p>
                 </div>
               </div>
             ))}
@@ -369,14 +358,14 @@ export default function LandingPage() {
       <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <Badge className="mb-4 px-4 py-2 bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border-emerald-400/30 text-white">
-              <Star className="mr-2 h-4 w-4" />
+            <Badge className="mb-4 px-4 py-1.5 bg-primary/20 border-primary/30 text-primary font-bold uppercase tracking-widest text-xs">
+              <Star className="mr-2 h-3 w-3" />
               Perfect For
             </Badge>
-            <h2 className="text-4xl md:text-5xl font-black mb-4 text-white">
+            <h2 className="text-4xl md:text-5xl font-semibold mb-4 text-white font-bitcount tracking-normal">
               Trusted Across Industries
             </h2>
-            <p className="text-lg text-slate-400 max-w-2xl mx-auto">
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               From concerts to conferences, BlockTix powers events of all sizes
             </p>
           </div>
@@ -387,37 +376,31 @@ export default function LandingPage() {
                 icon: Users,
                 title: 'Concerts & Music Festivals',
                 description: 'Large-scale events with thousands of attendees and zero counterfeit tickets',
-                color: 'from-pink-500 to-rose-500'
               },
               {
                 icon: Award,
                 title: 'Corporate Events',
                 description: 'Professional conferences, seminars, and networking events with VIP access control',
-                color: 'from-blue-500 to-indigo-500'
               },
               {
                 icon: Ticket,
                 title: 'Sports Events',
                 description: 'Stadium events, tournaments, and competitions with dynamic pricing',
-                color: 'from-orange-500 to-red-500'
               },
               {
                 icon: Sparkles,
                 title: 'Art Exhibitions',
                 description: 'Gallery shows, museum events, and cultural experiences',
-                color: 'from-purple-500 to-pink-500'
               },
               {
                 icon: Globe,
                 title: 'Virtual Events',
                 description: 'Online webinars, workshops, and digital conferences worldwide',
-                color: 'from-cyan-500 to-blue-500'
               },
               {
                 icon: TrendingUp,
                 title: 'Private Events',
                 description: 'Exclusive parties, fundraisers, and community gatherings',
-                color: 'from-emerald-500 to-green-500'
               }
             ].map((useCase, index) => (
               <div key={index} className="relative rounded-[1.25rem] p-1 group">
@@ -430,14 +413,14 @@ export default function LandingPage() {
                   borderWidth={2}
                 />
                 <Card
-                  className="relative h-full bg-slate-950/80 backdrop-blur-xl border-slate-800/50 group-hover:border-blue-500/20 transition-all duration-300 overflow-hidden"
+                  className="relative h-full bg-card/60 backdrop-blur-xl border-border/50 group-hover:border-primary/50 transition-all duration-300 overflow-hidden shadow-glow shadow-primary/5"
                 >
-                  <CardContent className="p-6 pt-6">
-                    <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${useCase.color} mb-4 shadow-xl group-hover:scale-110 transition-transform`}>
-                      <useCase.icon className="h-6 w-6 text-white" />
+                  <CardContent className="p-6 pt-6 text-center">
+                    <div className={`inline-flex p-3 rounded-xl bg-primary/10 border border-primary/20 mb-4 shadow-glow shadow-primary/5 group-hover:scale-110 transition-transform`}>
+                      <useCase.icon className="h-6 w-6 text-primary" />
                     </div>
                     <h3 className="text-xl font-bold text-white mb-2">{useCase.title}</h3>
-                    <p className="text-sm text-slate-400 leading-relaxed">{useCase.description}</p>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{useCase.description}</p>
                   </CardContent>
                 </Card>
               </div>
@@ -447,17 +430,17 @@ export default function LandingPage() {
       </section>
 
       {/* Technology Stack Section */}
-      <section id="technology" className="relative z-10 py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-transparent via-slate-900/50 to-transparent">
+      <section id="technology" className="relative z-10 py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-transparent via-primary/5 to-transparent">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <Badge className="mb-4 px-4 py-2 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border-indigo-400/30 text-white">
-              <Code2 className="mr-2 h-4 w-4" />
+            <Badge className="mb-4 px-4 py-1.5 bg-primary/20 border-primary/30 text-primary font-bold uppercase tracking-widest text-xs">
+              <Code2 className="mr-2 h-3 w-3" />
               Technology
             </Badge>
-            <h2 className="text-4xl md:text-5xl font-black mb-4 text-white">
+            <h2 className="text-4xl md:text-5xl font-semibold mb-4 text-white font-bitcount tracking-normal">
               Built on Cutting-Edge Tech
             </h2>
-            <p className="text-lg text-slate-400 max-w-2xl mx-auto">
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               Leveraging the power of blockchain and modern web technologies
             </p>
           </div>
@@ -483,21 +466,21 @@ export default function LandingPage() {
                 ]
               }
             ].map((stack, index) => (
-              <Card key={index} className="bg-slate-900/50 backdrop-blur-xl border-slate-800/50">
+              <Card key={index} className="bg-card/40 backdrop-blur-xl border-border/50">
                 <CardContent className="p-8">
-                  <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                    <div className="w-2 h-8 bg-gradient-to-b from-blue-500 to-purple-500 rounded-full"></div>
+                  <h3 className="text-2xl font-semibold text-white mb-6 flex items-center gap-3 font-bitcount tracking-normal">
+                    <div className="w-1.5 h-8 bg-primary rounded-full"></div>
                     {stack.title}
                   </h3>
                   <div className="space-y-4">
                     {stack.items.map((item, idx) => (
-                      <div key={idx} className="flex items-start gap-4 p-4 bg-slate-800/50 rounded-xl hover:bg-slate-800/70 transition-all group">
-                        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-                          <CheckCircle className="h-5 w-5 text-white" />
+                      <div key={idx} className="flex items-start gap-4 p-4 bg-background/50 border border-border/30 rounded-xl hover:border-primary/30 transition-all group">
+                        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <CheckCircle className="h-5 w-5 text-primary" />
                         </div>
                         <div className="flex-1">
                           <div className="font-bold text-white text-base mb-1">{item.name}</div>
-                          <div className="text-sm text-slate-400">{item.desc}</div>
+                          <div className="text-sm text-muted-foreground">{item.desc}</div>
                         </div>
                       </div>
                     ))}
@@ -512,37 +495,38 @@ export default function LandingPage() {
       {/* CTA Section */}
       <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
-          <Card className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 border-0 shadow-2xl">
-            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS1vcGFjaXR5PSIwLjEiIHN0cm9rZS13aWR0aD0iMSIvPjwvcGF0dGVybj48L2RlZnM+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0idXJsKCNncmlkKSIvPjwvc3ZnPg==')] opacity-40"></div>
+          <Card className="relative overflow-hidden bg-card/40 backdrop-blur-xl border-border hover:border-primary/50 transition-all duration-500 shadow-glow shadow-primary/10">
+            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS1vcGFjaXR5PSIwLjA1IiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-30"></div>
             <CardContent className="relative p-12 lg:p-16 text-center">
               <div className="mb-6">
-                <Sparkles className="h-16 w-16 text-white mx-auto animate-pulse" />
+                <Sparkles className="h-16 w-16 text-primary mx-auto animate-pulse" />
               </div>
-              <h2 className="text-4xl md:text-5xl font-black text-white mb-6">
+              <h2 className="text-4xl md:text-5xl font-semibold text-white mb-6 font-bitcount tracking-normal">
                 Ready to Get Started?
               </h2>
-              <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
+              <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto font-medium">
                 Join thousands of event organizers using BlockTix for secure, transparent, and fraud-free ticketing.
               </p>
 
-              <div className="flex flex-wrap justify-center gap-4 mb-8">
+              <div className="flex flex-wrap justify-center gap-3 mb-10">
                 {['No credit card required', 'Setup in 5 minutes', 'Free forever plan'].map((item, index) => (
-                  <div key={index} className="flex items-center gap-2 px-4 py-2 bg-white/20 backdrop-blur-sm rounded-full">
-                    <CheckCircle className="h-5 w-5 text-white" />
-                    <span className="text-white font-semibold">{item}</span>
+                  <div key={index} className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 backdrop-blur-sm rounded-full border border-primary/30">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    <span className="text-primary font-bold text-xs uppercase tracking-widest">{item}</span>
                   </div>
                 ))}
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <div className="flex justify-center items-center">
                 <Button
+                  variant="outline"
                   size="lg"
                   onClick={() => setLocation('/signup')}
-                  className="bg-white hover:bg-gray-100 text-blue-600 font-bold text-sm px-8 py-4 shadow-2xl hover:scale-105 transition-all whitespace-nowrap flex items-center justify-center gap-2"
+                  className="border-border hover:border-primary/50 bg-background/50 hover:bg-card/60 text-white font-bold px-8 py-6 text-base backdrop-blur-sm transition-all rounded-full inline-flex items-center justify-center gap-2"
                 >
-                  <Rocket className="h-4 w-4" />
+                  <Rocket className="h-5 w-5" />
                   Create Free Account
-                  <ArrowRight className="h-4 w-4" />
+                  <ArrowRight className="h-5 w-5" />
                 </Button>
               </div>
             </CardContent>
@@ -551,26 +535,27 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="relative z-10 border-t border-slate-800/50 py-12 bg-slate-950/50 backdrop-blur-xl">
+      <footer className="relative z-10 border-t border-border/50 py-16 bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col items-center justify-center text-center">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-3 bg-gradient-to-r from-green-500 to-green-600 rounded-xl">
-                <Ticket className="h-6 w-6 text-white" />
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-primary/20 border border-primary/30 rounded-xl">
+                <Ticket className="h-7 w-7 text-primary" />
               </div>
-              <span className="text-2xl font-medium font-bitcount">
-                <span className="text-white">Block</span>
-                <span className="text-green-500">Tix</span>
+              <span className="text-3xl font-semibold font-bitcount tracking-normal">
+                <span className="text-white">BLOCK</span>
+                <span className="text-primary">TIX</span>
               </span>
             </div>
-            <p className="text-slate-400 mb-6 max-w-md">
-              Blockchain-powered event ticketing for the modern world
+            <p className="text-muted-foreground mb-8 max-w-md font-medium">
+              Blockchain-powered event ticketing for the modern world.
+              Secure. Transparent. Immutable.
             </p>
-            <div className="flex gap-2 text-sm text-slate-500">
+            <div className="flex flex-wrap justify-center gap-6 text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground/60">
               <span>© 2025 BlockTix</span>
-              <span>•</span>
+              <span className="text-primary/30">•</span>
               <span>Ethereum Network</span>
-              <span>•</span>
+              <span className="text-primary/30">•</span>
               <span>Sepolia Testnet</span>
             </div>
           </div>

@@ -20,10 +20,10 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Event, Ticket } from '@/types/web3';
-import { 
-  Calendar, 
-  Ticket as TicketIcon, 
-  Shield, 
+import {
+  Calendar,
+  Ticket as TicketIcon,
+  Shield,
   Box,
   Plus,
   QrCode,
@@ -48,12 +48,12 @@ export default function Home() {
     }
   }, [user, setLocation]);
   const { walletState } = useWallet();
-  const { 
-    transactionStatus, 
+  const {
+    transactionStatus,
     resetTransactionStatus,
-    createEvent, 
-    mintTicket, 
-    verifyTicket, 
+    createEvent,
+    mintTicket,
+    verifyTicket,
     markTicketUsed,
     getEvent,
     contractAddress
@@ -105,7 +105,7 @@ export default function Home() {
   // Handle event creation
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!walletState.isConnected || !walletState.isCorrectChain) {
       toast({
         title: "Wallet Required",
@@ -172,7 +172,7 @@ export default function Home() {
   // Handle ticket minting
   const handleMintTicket = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!walletState.isConnected || !walletState.isCorrectChain) {
       toast({
         title: "Wallet Required",
@@ -184,7 +184,7 @@ export default function Home() {
 
     // Use the ticket price from created event if available, otherwise use a default
     const ticketPrice = createdEvent?.ticketPrice || "0.001";
-    
+
     const result = await mintTicket(ticketForm.eventId, ticketForm.attendeeName);
 
     if (result) {
@@ -232,7 +232,7 @@ export default function Home() {
   // Handle ticket verification
   const handleVerifyTicket = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const result = await verifyTicket(verifyForm.eventId, verifyForm.ticketId);
 
     if (result) {
@@ -289,7 +289,7 @@ export default function Home() {
 
   // Generate QR code data
   const getEventQRData = (eventId: string) => `event:${eventId}`;
-  const getTicketQRData = (eventId: string, ticketId: string, walletAddress: string) => 
+  const getTicketQRData = (eventId: string, ticketId: string, walletAddress: string) =>
     `event:${eventId}:ticket:${ticketId}:wallet:${walletAddress}`;
 
   const handleLogout = async () => {
@@ -306,27 +306,30 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
+      <header className="bg-background/95 backdrop-blur-xl border-b border-border sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <Box className="text-primary text-2xl" />
-                <h1 className="text-xl font-bold text-slate-900">BlockTix</h1>
+              <div className="flex items-center space-x-2 group cursor-pointer" onClick={() => setLocation('/')}>
+                <Box className="text-primary text-2xl group-hover:scale-110 transition-transform" />
+                <h1 className="text-xl font-semibold font-bitcount tracking-normal">
+                  <span className="text-white">Block</span>
+                  <span className="text-primary">Tix</span>
+                </h1>
               </div>
-              <Badge variant="outline" className="text-xs">
+              <Badge variant="outline" className="text-xs border-primary/30 text-primary-foreground/70">
                 Sepolia Testnet
               </Badge>
               {user && (
-                <Badge variant="secondary" className="text-xs">
+                <Badge variant="secondary" className="text-xs bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
                   <UserIcon className="h-3 w-3 mr-1" />
                   {user.user_metadata?.name || user.email}
                 </Badge>
               )}
             </div>
-            
+
             <div className="flex items-center gap-3">
               <DashboardLink />
               <WalletConnect />
@@ -334,7 +337,7 @@ export default function Home() {
                 variant="outline"
                 size="sm"
                 onClick={handleLogout}
-                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                className="text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-400 font-medium"
               >
                 <LogOut className="h-4 w-4 mr-2" />
                 Logout
@@ -347,28 +350,28 @@ export default function Home() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Navigation Tabs */}
-        <Card className="mb-8">
+        <Card className="mb-8 bg-card/50 backdrop-blur-lg border-border">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-3 bg-transparent p-0">
-              <TabsTrigger 
-                value="create" 
-                className="flex items-center space-x-2 py-4 data-[state=active]:bg-slate-50 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary"
+              <TabsTrigger
+                value="create"
+                className="flex items-center space-x-2 py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
                 data-testid="tab-create-event"
               >
                 <Plus className="w-4 h-4" />
                 <span>Create Event</span>
               </TabsTrigger>
-              <TabsTrigger 
-                value="generate" 
-                className="flex items-center space-x-2 py-4 data-[state=active]:bg-slate-50 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary"
+              <TabsTrigger
+                value="generate"
+                className="flex items-center space-x-2 py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
                 data-testid="tab-generate-ticket"
               >
                 <TicketIcon className="w-4 h-4" />
                 <span>Generate Ticket</span>
               </TabsTrigger>
-              <TabsTrigger 
-                value="verify" 
-                className="flex items-center space-x-2 py-4 data-[state=active]:bg-slate-50 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary"
+              <TabsTrigger
+                value="verify"
+                className="flex items-center space-x-2 py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
                 data-testid="tab-verify-ticket"
               >
                 <Shield className="w-4 h-4" />
@@ -380,37 +383,37 @@ export default function Home() {
             <TabsContent value="create" className="mt-0">
               <div className="grid lg:grid-cols-2 gap-8 p-6">
                 {/* Create Event Form */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center space-x-2">
-                      <Calendar className="w-5 h-5" />
+                <Card className="bg-card/30 border-border overflow-hidden">
+                  <CardHeader className="bg-gradient-to-r from-primary/5 to-transparent border-b border-border/50">
+                    <CardTitle className="flex items-center space-x-2 text-white">
+                      <Calendar className="w-5 h-5 text-primary" />
                       <span>Create New Event</span>
                     </CardTitle>
-                    <p className="text-slate-600">Deploy your event to the blockchain and generate a unique event ID</p>
+                    <p className="text-muted-foreground">Deploy your event to the blockchain ...</p>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="pt-6">
                     {/* Contract status notice */}
                     {contractAddress === "0x0000000000000000000000000000000000000000" ? (
-                      <Alert className="mb-4 border-yellow-200 bg-yellow-50">
-                        <Info className="w-4 h-4 text-yellow-600" />
-                        <AlertDescription className="text-yellow-800">
-                          <strong>Smart Contract Required:</strong> To use this app, deploy the contract from <code>contracts/EventTicketing.sol</code> to Sepolia testnet using{' '}
-                          <a href="https://remix.ethereum.org" target="_blank" rel="noopener noreferrer" className="underline">
+                      <Alert className="mb-4 bg-orange-500/10 border-orange-500/20 text-orange-400">
+                        <Info className="w-4 h-4" />
+                        <AlertDescription>
+                          <strong className="text-white">Smart Contract Required:</strong> To use this app, deploy the contract from <code>contracts/EventTicketing.sol</code> to Sepolia testnet using{' '}
+                          <a href="https://remix.ethereum.org" target="_blank" rel="noopener noreferrer" className="underline text-primary">
                             Remix IDE
                           </a>, then set <code>VITE_CONTRACT_ADDRESS</code> in your environment.{' '}
-                          <a href="/DEPLOYMENT.md" className="underline">View full guide</a>
+                          <a href="/DEPLOYMENT.md" className="underline text-primary">View full guide</a>
                         </AlertDescription>
                       </Alert>
                     ) : (
-                      <Alert className="mb-4 border-green-200 bg-green-50">
-                        <CheckCircle className="w-4 h-4 text-green-600" />
-                        <AlertDescription className="text-green-800">
-                          <strong>Contract Connected:</strong> Smart contract deployed at{' '}
-                          <code className="bg-green-100 px-1 rounded text-xs">{contractAddress}</code> on Sepolia testnet.
+                      <Alert className="mb-4 bg-primary/10 border-primary/20 text-primary">
+                        <CheckCircle className="w-4 h-4" />
+                        <AlertDescription>
+                          <strong className="text-white">Contract Connected:</strong> Smart contract deployed at{' '}
+                          <code className="bg-primary/20 px-1 rounded text-xs text-primary">{contractAddress}</code> on Sepolia testnet.
                         </AlertDescription>
                       </Alert>
                     )}
-                    
+
                     <form onSubmit={handleCreateEvent} className="space-y-4">
                       <div>
                         <Label htmlFor="eventName">Event Name</Label>
@@ -476,8 +479,8 @@ export default function Home() {
                         />
                       </div>
 
-                      <Button 
-                        type="submit" 
+                      <Button
+                        type="submit"
                         className="w-full bg-primary hover:bg-primary/90"
                         disabled={!walletState.isConnected || !walletState.isCorrectChain}
                         data-testid="button-create-event"
@@ -489,8 +492,8 @@ export default function Home() {
 
                     {transactionStatus.status !== 'idle' && activeTab === 'create' && (
                       <div className="mt-4">
-                        <TransactionStatus 
-                          status={transactionStatus} 
+                        <TransactionStatus
+                          status={transactionStatus}
                           onClose={resetTransactionStatus}
                         />
                       </div>
@@ -501,38 +504,38 @@ export default function Home() {
                 {/* Event Created Success */}
                 {createdEvent && (
                   <div className="space-y-6">
-                    <Card>
+                    <Card className="bg-card/40 border-primary/30 shadow-glow shadow-primary/10">
                       <CardContent className="pt-6 text-center">
-                        <div className="w-16 h-16 bg-secondary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                          <CheckCircle className="text-secondary text-2xl" />
+                        <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20">
+                          <CheckCircle className="text-primary text-2xl" />
                         </div>
-                        <h3 className="text-xl font-bold text-slate-900 mb-2">Event Created Successfully!</h3>
-                        <p className="text-slate-600 mb-6">Your event has been deployed to the Sepolia blockchain</p>
+                        <h3 className="text-xl font-semibold text-white mb-2 font-bitcount tracking-normal">Event Created Successfully!</h3>
+                        <p className="text-muted-foreground mb-6">Your event has been deployed to the Sepolia blockchain</p>
 
                         {/* Event Details Card */}
-                        <div className="bg-slate-50 rounded-lg p-4 mb-6 text-left">
+                        <div className="bg-background/80 rounded-lg p-4 mb-6 text-left border border-border">
                           <div className="grid grid-cols-2 gap-4 text-sm">
                             <div>
-                              <span className="text-slate-500">Event ID:</span>
-                              <p className="font-mono font-medium text-slate-900" data-testid="text-created-event-id">
+                              <span className="text-muted-foreground">Event ID:</span>
+                              <p className="font-mono font-medium text-primary" data-testid="text-created-event-id">
                                 {createdEventId}
                               </p>
                             </div>
                             <div>
-                              <span className="text-slate-500">Price:</span>
-                              <p className="font-medium text-slate-900" data-testid="text-created-event-price">
+                              <span className="text-muted-foreground">Price:</span>
+                              <p className="font-medium text-white" data-testid="text-created-event-price">
                                 {createdEvent.ticketPrice} ETH
                               </p>
                             </div>
                             <div>
-                              <span className="text-slate-500">Max Tickets:</span>
-                              <p className="font-medium text-slate-900" data-testid="text-created-event-max-tickets">
+                              <span className="text-muted-foreground">Max Tickets:</span>
+                              <p className="font-medium text-white" data-testid="text-created-event-max-tickets">
                                 {createdEvent.maxTickets}
                               </p>
                             </div>
                             <div>
-                              <span className="text-slate-500">Available:</span>
-                              <p className="font-medium text-slate-900" data-testid="text-created-event-available">
+                              <span className="text-muted-foreground">Available:</span>
+                              <p className="font-medium text-primary" data-testid="text-created-event-available">
                                 {createdEvent.maxTickets - createdEvent.ticketsSold}
                               </p>
                             </div>
@@ -555,15 +558,15 @@ export default function Home() {
             <TabsContent value="generate" className="mt-0">
               <div className="grid lg:grid-cols-2 gap-8 p-6">
                 {/* Generate Ticket Form */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center space-x-2">
-                      <TicketIcon className="w-5 h-5" />
+                <Card className="bg-card/30 border-border overflow-hidden">
+                  <CardHeader className="bg-gradient-to-r from-primary/5 to-transparent border-b border-border/50">
+                    <CardTitle className="flex items-center space-x-2 text-white">
+                      <TicketIcon className="w-5 h-5 text-primary" />
                       <span>Mint Event Ticket</span>
                     </CardTitle>
-                    <p className="text-slate-600">Purchase and mint a blockchain-verified ticket NFT</p>
+                    <p className="text-muted-foreground">Purchase and mint a blockchain-verified ticket NFT</p>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="pt-6">
                     <form onSubmit={handleMintTicket} className="space-y-4">
                       <div>
                         <Label htmlFor="eventId">Event ID</Label>
@@ -604,32 +607,32 @@ export default function Home() {
 
                       {/* Event Info Display */}
                       {eventForTicket && (
-                        <Card className="bg-slate-50">
-                          <CardHeader>
-                            <CardTitle className="text-base">Event Details</CardTitle>
+                        <Card className="bg-background/80 border-border overflow-hidden">
+                          <CardHeader className="py-3 px-4 bg-primary/5 border-b border-border">
+                            <CardTitle className="text-sm font-bold text-white">Event Details</CardTitle>
                           </CardHeader>
-                          <CardContent className="space-y-2 text-sm">
+                          <CardContent className="space-y-2 text-sm p-4">
                             <div className="flex justify-between">
-                              <span className="text-slate-600">Event Name:</span>
-                              <span className="font-medium" data-testid="text-event-name">
+                              <span className="text-muted-foreground text-xs uppercase tracking-wider font-semibold">Event Name:</span>
+                              <span className="font-medium text-white" data-testid="text-event-name">
                                 {eventForTicket.name}
                               </span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-slate-600">Date:</span>
-                              <span className="font-medium" data-testid="text-event-date">
+                              <span className="text-muted-foreground text-xs uppercase tracking-wider font-semibold">Date:</span>
+                              <span className="font-medium text-white" data-testid="text-event-date">
                                 {new Date(eventForTicket.date).toLocaleDateString()}
                               </span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-slate-600">Price:</span>
+                              <span className="text-muted-foreground text-xs uppercase tracking-wider font-semibold">Price:</span>
                               <span className="font-medium text-primary" data-testid="text-event-price">
                                 {eventForTicket.ticketPrice} ETH
                               </span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-slate-600">Available:</span>
-                              <span className="font-medium text-secondary" data-testid="text-event-available">
+                              <span className="text-muted-foreground text-xs uppercase tracking-wider font-semibold">Available:</span>
+                              <span className="font-medium text-primary" data-testid="text-event-available">
                                 {eventForTicket.maxTickets - eventForTicket.ticketsSold}/{eventForTicket.maxTickets}
                               </span>
                             </div>
@@ -638,7 +641,7 @@ export default function Home() {
                       )}
 
                       {!walletState.isConnected && (
-                        <Alert>
+                        <Alert className="bg-primary/10 border-primary/20 text-primary">
                           <Info className="h-4 w-4" />
                           <AlertDescription>
                             Connect your MetaMask wallet to mint tickets. The NFT will be tied to your wallet address.
@@ -646,8 +649,8 @@ export default function Home() {
                         </Alert>
                       )}
 
-                      <Button 
-                        type="submit" 
+                      <Button
+                        type="submit"
                         className="w-full bg-secondary hover:bg-secondary/90"
                         disabled={!walletState.isConnected || !walletState.isCorrectChain}
                         data-testid="button-mint-ticket"
@@ -659,8 +662,8 @@ export default function Home() {
 
                     {transactionStatus.status !== 'idle' && activeTab === 'generate' && (
                       <div className="mt-4">
-                        <TransactionStatus 
-                          status={transactionStatus} 
+                        <TransactionStatus
+                          status={transactionStatus}
                           onClose={resetTransactionStatus}
                         />
                       </div>
@@ -671,45 +674,45 @@ export default function Home() {
                 {/* Ticket Minted Success */}
                 {mintedTicket && (
                   <div className="space-y-6">
-                    <Card>
+                    <Card className="bg-card/40 border-primary/30 shadow-glow shadow-primary/10">
                       <CardContent className="pt-6 text-center">
-                        <div className="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                          <Medal className="text-accent text-2xl" />
+                        <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20">
+                          <Medal className="text-primary text-2xl" />
                         </div>
-                        <h3 className="text-xl font-bold text-slate-900 mb-2">Ticket Minted Successfully!</h3>
-                        <p className="text-slate-600 mb-6">Your NFT ticket has been created and stored on the blockchain</p>
+                        <h3 className="text-xl font-bold text-white mb-2 font-bitcount tracking-normal">Ticket Minted Successfully!</h3>
+                        <p className="text-muted-foreground mb-6">Your NFT ticket has been created and stored on the blockchain</p>
 
                         {/* Ticket Details Card */}
-                        <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-lg p-4 mb-6 border border-purple-200">
+                        <div className="bg-background/80 rounded-lg p-4 mb-6 border border-primary/20 text-left">
                           <div className="grid grid-cols-2 gap-4 text-sm mb-4">
                             <div>
-                              <span className="text-slate-500">Ticket ID:</span>
-                              <p className="font-mono font-medium text-slate-900" data-testid="text-minted-ticket-id">
+                              <span className="text-muted-foreground">Ticket ID:</span>
+                              <p className="font-mono font-medium text-primary" data-testid="text-minted-ticket-id">
                                 {mintedTicketId}
                               </p>
                             </div>
                             <div>
-                              <span className="text-slate-500">Owner:</span>
-                              <p className="font-mono font-medium text-slate-900 truncate" data-testid="text-minted-ticket-owner">
+                              <span className="text-muted-foreground">Owner:</span>
+                              <p className="font-mono font-medium text-white truncate" data-testid="text-minted-ticket-owner">
                                 {mintedTicket.owner.slice(0, 6)}...{mintedTicket.owner.slice(-4)}
                               </p>
                             </div>
                             <div>
-                              <span className="text-slate-500">Status:</span>
-                              <Badge className="bg-green-100 text-green-800" data-testid="status-minted-ticket">
+                              <span className="text-muted-foreground">Status:</span>
+                              <Badge className="bg-primary/20 text-primary border-primary/30" data-testid="status-minted-ticket">
                                 <CheckCircle className="w-3 h-3 mr-1" />
                                 Valid
                               </Badge>
                             </div>
                             <div>
-                              <span className="text-slate-500">Event:</span>
-                              <p className="font-medium text-slate-900" data-testid="text-minted-ticket-event">
+                              <span className="text-muted-foreground">Event:</span>
+                              <p className="font-medium text-white" data-testid="text-minted-ticket-event">
                                 {ticketForm.eventId}
                               </p>
                             </div>
                           </div>
-                          <div className="text-center">
-                            <p className="text-sm font-medium text-slate-700" data-testid="text-minted-attendee-name">
+                          <div className="text-center border-t border-border pt-3">
+                            <p className="text-sm font-bold text-white uppercase tracking-widest" data-testid="text-minted-attendee-name">
                               {mintedTicket.attendeeName}
                             </p>
                           </div>
@@ -723,9 +726,9 @@ export default function Home() {
                       subtitle={`event:${mintedTicket.eventId}:ticket:${mintedTicketId}:wallet:${mintedTicket.owner.slice(0, 8)}...`}
                     />
 
-                    <Alert className="bg-blue-50 border-blue-200">
+                    <Alert className="bg-primary/10 border-primary/20 text-primary">
                       <Info className="h-4 w-4" />
-                      <AlertDescription className="text-blue-800">
+                      <AlertDescription>
                         This ticket is now in your MetaMask wallet as an NFT. Present the QR code at the event for verification.
                       </AlertDescription>
                     </Alert>
@@ -738,26 +741,28 @@ export default function Home() {
             <TabsContent value="verify" className="mt-0">
               <div className="grid lg:grid-cols-2 gap-8 p-6">
                 {/* Verify Ticket Form */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center space-x-2">
-                      <Shield className="w-5 h-5" />
+                <Card className="bg-card/30 border-border overflow-hidden">
+                  <CardHeader className="bg-gradient-to-r from-primary/5 to-transparent border-b border-border/50">
+                    <CardTitle className="flex items-center space-x-2 text-white">
+                      <Shield className="w-5 h-5 text-primary" />
                       <span>Verify Event Ticket</span>
                     </CardTitle>
-                    <p className="text-slate-600">Scan or enter ticket details to verify authenticity on the blockchain</p>
+                    <p className="text-muted-foreground">Scan or enter ticket details to verify authenticity on the blockchain</p>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="pt-6">
                     {/* QR Scanner Section */}
-                    <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center mb-6">
-                      <Camera className="w-16 h-16 bg-slate-100 rounded-full p-4 mx-auto mb-4 text-slate-400" />
-                      <h4 className="font-medium text-slate-900 mb-2">Scan QR Code</h4>
-                      <p className="text-slate-600 text-sm mb-4">Point your camera at the ticket QR code</p>
+                    <div className="border-2 border-dashed border-border/60 rounded-lg p-8 text-center mb-6 bg-muted/20 group hover:border-primary/50 transition-colors">
+                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20 group-hover:bg-primary/20 transition-colors">
+                        <Camera className="w-8 h-8 text-primary" />
+                      </div>
+                      <h4 className="font-bold text-white mb-2">Scan QR Code</h4>
+                      <p className="text-muted-foreground text-sm mb-4">Point your camera at the ticket QR code</p>
                       <Button
                         onClick={() => {
                           setQrScanType('verify');
                           setIsQRScannerOpen(true);
                         }}
-                        className="bg-primary hover:bg-primary/90"
+                        className="bg-primary hover:bg-primary/90 text-white shadow-glow shadow-primary/20"
                         data-testid="button-start-qr-scan"
                       >
                         <Camera className="w-4 h-4 mr-2" />
@@ -766,9 +771,9 @@ export default function Home() {
                     </div>
 
                     <div className="flex items-center mb-6">
-                      <div className="flex-1 border-t border-slate-300"></div>
-                      <span className="px-4 text-slate-500 text-sm">OR</span>
-                      <div className="flex-1 border-t border-slate-300"></div>
+                      <div className="flex-1 border-t border-border/50"></div>
+                      <span className="px-4 text-muted-foreground text-xs font-bold tracking-widest uppercase">OR</span>
+                      <div className="flex-1 border-t border-border/50"></div>
                     </div>
 
                     {/* Manual Entry Section */}
@@ -808,8 +813,8 @@ export default function Home() {
                         />
                       </div>
 
-                      <Button 
-                        type="submit" 
+                      <Button
+                        type="submit"
                         className="w-full bg-accent hover:bg-accent/90"
                         data-testid="button-verify-ticket"
                       >
@@ -820,8 +825,8 @@ export default function Home() {
 
                     {transactionStatus.status !== 'idle' && activeTab === 'verify' && (
                       <div className="mt-4">
-                        <TransactionStatus 
-                          status={transactionStatus} 
+                        <TransactionStatus
+                          status={transactionStatus}
                           onClose={resetTransactionStatus}
                         />
                       </div>
@@ -832,26 +837,26 @@ export default function Home() {
                 {/* Verification Results */}
                 {verificationResult && (
                   <div className="space-y-6">
-                    <Card>
+                    <Card className={`bg-card/40 border-${verificationResult.valid ? 'primary' : 'destructive'}/30 shadow-glow shadow-${verificationResult.valid ? 'primary' : 'destructive'}/10 overflow-hidden`}>
                       <CardContent className="pt-6 text-center">
-                        <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
-                          verificationResult.valid ? 'bg-green-100' : 'bg-red-100'
-                        }`}>
+                        <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 border-2 ${verificationResult.valid
+                          ? 'bg-primary/10 border-primary/20 text-primary'
+                          : 'bg-destructive/10 border-destructive/20 text-destructive'
+                          }`}>
                           {verificationResult.valid ? (
-                            <CheckCircle className="text-green-600 text-2xl" />
+                            <CheckCircle className="w-10 h-10" />
                           ) : (
-                            <XCircle className="text-red-600 text-2xl" />
+                            <XCircle className="w-10 h-10" />
                           )}
                         </div>
-                        
-                        <h3 className={`text-xl font-bold mb-2 ${
-                          verificationResult.valid ? 'text-green-800' : 'text-red-800'
-                        }`}>
-                          {verificationResult.valid ? '✅ Valid Ticket' : '❌ Invalid Ticket'}
+
+                        <h3 className={`text-2xl font-semibold mb-2 font-bitcount tracking-normal ${verificationResult.valid ? 'text-primary' : 'text-destructive'
+                          }`}>
+                          {verificationResult.valid ? 'Valid Ticket Detected' : 'Invalid Ticket Detected'}
                         </h3>
-                        
-                        <p className="text-slate-600 mb-6">
-                          {verificationResult.valid 
+
+                        <p className="text-muted-foreground mb-6">
+                          {verificationResult.valid
                             ? 'This ticket has been verified on the blockchain'
                             : 'This ticket could not be verified on the blockchain'
                           }
@@ -860,53 +865,52 @@ export default function Home() {
                         {verificationResult.valid ? (
                           <>
                             {/* Valid Ticket Details */}
-                            <div className="bg-green-50 rounded-lg p-4 mb-6 text-left">
-                              <div className="grid grid-cols-1 gap-3 text-sm">
-                                <div className="flex justify-between">
-                                  <span className="text-slate-600">Ticket ID:</span>
-                                  <span className="font-mono font-medium" data-testid="text-verified-ticket-id">
+                            <div className="bg-background/80 rounded-xl p-6 mb-6 text-left border border-border">
+                              <div className="grid grid-cols-1 gap-4 text-sm">
+                                <div className="flex justify-between items-center border-b border-border/50 pb-2">
+                                  <span className="text-muted-foreground uppercase text-[10px] font-bold tracking-widest">Ticket ID</span>
+                                  <span className="font-mono font-medium text-primary bg-primary/5 px-2 py-1 rounded" data-testid="text-verified-ticket-id">
                                     {verifyForm.ticketId}
                                   </span>
                                 </div>
-                                <div className="flex justify-between">
-                                  <span className="text-slate-600">Owner:</span>
-                                  <span className="font-mono font-medium" data-testid="text-verified-ticket-owner">
+                                <div className="flex justify-between items-center border-b border-border/50 pb-2">
+                                  <span className="text-muted-foreground uppercase text-[10px] font-bold tracking-widest">Owner Address</span>
+                                  <span className="font-mono font-medium text-white" data-testid="text-verified-ticket-owner">
                                     {verificationResult.owner.slice(0, 6)}...{verificationResult.owner.slice(-4)}
                                   </span>
                                 </div>
-                                <div className="flex justify-between">
-                                  <span className="text-slate-600">Attendee:</span>
-                                  <span className="font-medium" data-testid="text-verified-attendee-name">
+                                <div className="flex justify-between items-center border-b border-border/50 pb-2">
+                                  <span className="text-muted-foreground uppercase text-[10px] font-bold tracking-widest">Attendee Name</span>
+                                  <span className="font-bold text-white text-base" data-testid="text-verified-attendee-name">
                                     {verificationResult.attendeeName}
                                   </span>
                                 </div>
                                 {verificationResult.event && (
-                                  <div className="flex justify-between">
-                                    <span className="text-slate-600">Event:</span>
-                                    <span className="font-medium" data-testid="text-verified-event-name">
+                                  <div className="flex justify-between items-center border-b border-border/50 pb-2">
+                                    <span className="text-muted-foreground uppercase text-[10px] font-bold tracking-widest">Event</span>
+                                    <span className="font-medium text-white" data-testid="text-verified-event-name">
                                       {verificationResult.event.name}
                                     </span>
                                   </div>
                                 )}
-                                <div className="flex justify-between">
-                                  <span className="text-slate-600">Status:</span>
-                                  <Badge 
-                                    className={`${
-                                      verificationResult.isUsed 
-                                        ? 'bg-yellow-100 text-yellow-800' 
-                                        : 'bg-green-100 text-green-800'
-                                    }`}
+                                <div className="flex justify-between items-center">
+                                  <span className="text-muted-foreground uppercase text-[10px] font-bold tracking-widest">Usage Status</span>
+                                  <Badge
+                                    className={`px-3 py-1 rounded-full border ${verificationResult.isUsed
+                                      ? 'bg-destructive/10 text-destructive border-destructive/20'
+                                      : 'bg-primary/10 text-primary border-primary/20'
+                                      }`}
                                     data-testid="status-verified-ticket"
                                   >
                                     {verificationResult.isUsed ? (
                                       <>
-                                        <AlertTriangle className="w-3 h-3 mr-1" />
+                                        <AlertTriangle className="w-3 h-3 mr-1.5" />
                                         Used
                                       </>
                                     ) : (
                                       <>
-                                        <CheckCircle className="w-3 h-3 mr-1" />
-                                        Not Used
+                                        <CheckCircle className="w-3 h-3 mr-1.5" />
+                                        Valid / Not Used
                                       </>
                                     )}
                                   </Badge>
@@ -937,21 +941,33 @@ export default function Home() {
                         ) : (
                           <>
                             {/* Invalid Ticket Warning */}
-                            <Alert className="bg-red-50 border-red-200 mb-6">
-                              <AlertTriangle className="h-4 w-4" />
+                            <Alert className="bg-destructive/10 border-destructive/20 mb-6 text-destructive">
+                              <AlertTriangle className="h-5 w-5" />
                               <AlertDescription className="text-left">
-                                <p className="text-red-800 font-medium text-sm mb-2">Possible Issues:</p>
-                                <ul className="text-red-700 text-sm space-y-1">
-                                  <li>• Ticket ID does not exist on blockchain</li>
-                                  <li>• Ticket has already been used</li>
-                                  <li>• Wallet address mismatch</li>
-                                  <li>• Fraudulent or counterfeit ticket</li>
+                                <p className="font-bold text-sm mb-2 uppercase tracking-wider">Possible Issues</p>
+                                <ul className="text-xs space-y-1.5 opacity-90">
+                                  <li className="flex items-center gap-2">
+                                    <XCircle className="w-3 h-3" />
+                                    Ticket ID does not exist on blockchain
+                                  </li>
+                                  <li className="flex items-center gap-2">
+                                    <XCircle className="w-3 h-3" />
+                                    Ticket has already been used
+                                  </li>
+                                  <li className="flex items-center gap-2">
+                                    <XCircle className="w-3 h-3" />
+                                    Wallet address mismatch
+                                  </li>
+                                  <li className="flex items-center gap-2">
+                                    <XCircle className="w-3 h-3" />
+                                    Fraudulent or counterfeit ticket
+                                  </li>
                                 </ul>
                               </AlertDescription>
                             </Alert>
 
-                            <Button 
-                              variant="destructive" 
+                            <Button
+                              variant="destructive"
                               className="w-full"
                               data-testid="button-report-fraudulent-ticket"
                             >

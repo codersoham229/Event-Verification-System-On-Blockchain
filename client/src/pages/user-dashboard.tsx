@@ -8,12 +8,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { 
-  Ticket, 
-  Calendar, 
-  MapPin, 
-  Clock, 
-  LogOut, 
+import {
+  Ticket,
+  Calendar,
+  MapPin,
+  Clock,
+  LogOut,
   UserCircle,
   QrCode,
   History,
@@ -68,19 +68,19 @@ export default function UserDashboard() {
     // Set up real-time subscription for new tickets
     const ticketsSubscription = supabase
       .channel('tickets_changes')
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'tickets' 
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'tickets'
       }, (payload) => {
         console.log('New ticket detected:', payload);
         // Refresh data when new ticket is added
         fetchData();
       })
-      .on('postgres_changes', { 
-        event: 'UPDATE', 
-        schema: 'public', 
-        table: 'tickets' 
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'tickets'
       }, (payload) => {
         console.log('Ticket updated:', payload);
         // Refresh data when ticket is updated
@@ -91,19 +91,19 @@ export default function UserDashboard() {
     // Set up real-time subscription for new events
     const eventsSubscription = supabase
       .channel('events_changes')
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'events' 
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'events'
       }, (payload) => {
         console.log('New event detected:', payload);
         // Refresh data when new event is added
         fetchData();
       })
-      .on('postgres_changes', { 
-        event: 'UPDATE', 
-        schema: 'public', 
-        table: 'events' 
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'events'
       }, (payload) => {
         console.log('Event updated:', payload);
         // Refresh data when event is updated
@@ -214,39 +214,41 @@ export default function UserDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 flex items-center justify-center">
-        <div className="text-white text-xl">Loading...</div>
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <p className="mt-4 text-muted-foreground font-medium">Loading Dashboard...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <header className="bg-slate-900/50 backdrop-blur-xl border-b border-slate-800 sticky top-0 z-50">
+      <header className="bg-background/95 backdrop-blur-xl border-b border-border sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <div className="p-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg">
-                <Ticket className="h-6 w-6 text-white" />
+              <div className="p-2 bg-primary/20 rounded-lg border border-primary/30">
+                <Ticket className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-                  BlockTix
+                <h1 className="text-2xl font-semibold font-bitcount tracking-normal">
+                  <span className="text-white">Block</span>
+                  <span className="text-primary">Tix</span>
                 </h1>
-                <p className="text-xs text-slate-400">User Dashboard</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-widest font-bold">User Dashboard</p>
               </div>
             </div>
 
             <div className="flex items-center gap-4">
-              <Badge variant="outline" className="bg-indigo-600/20 border-indigo-400/50 text-indigo-300 px-3 py-1">
+              <Badge variant="outline" className="bg-primary/5 border-primary/30 text-primary px-3 py-1">
                 <UserCircle className="mr-1.5 h-4 w-4" />
                 {user?.user_metadata?.name || user?.email}
               </Badge>
               <Button
                 variant="outline"
                 onClick={handleLogout}
-                className="border-slate-700 text-slate-300 hover:text-white hover:border-red-500"
+                className="text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-400 font-medium"
               >
                 <LogOut className="mr-2 h-4 w-4" />
                 Logout
@@ -260,45 +262,45 @@ export default function UserDashboard() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Stats Overview */}
         <div className="grid md:grid-cols-3 gap-6 mb-8">
-          <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700/50">
+          <Card className="bg-card/40 backdrop-blur-sm border-border">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-slate-400 text-sm">Total Tickets Issued</p>
-                  <p className="text-3xl font-bold text-white mt-1">{userTickets.length}</p>
+                  <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest">Total Tickets Issued</p>
+                  <p className="text-4xl font-semibold text-white mt-1 font-bitcount tracking-normal">{userTickets.length}</p>
                 </div>
-                <div className="p-3 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl">
-                  <Ticket className="h-8 w-8 text-white" />
+                <div className="p-3 bg-primary/10 rounded-xl border border-primary/20 shadow-glow shadow-primary/5">
+                  <Ticket className="h-8 w-8 text-primary" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700/50">
+          <Card className="bg-card/40 backdrop-blur-sm border-border">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-slate-400 text-sm">Available Tickets</p>
-                  <p className="text-3xl font-bold text-white mt-1">
+                  <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest">Available Tickets</p>
+                  <p className="text-4xl font-semibold text-white mt-1 font-bitcount tracking-normal">
                     {userTickets.filter((t: any) => !t.used).length}
                   </p>
                 </div>
-                <div className="p-3 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl">
-                  <Star className="h-8 w-8 text-white" />
+                <div className="p-3 bg-primary/10 rounded-xl border border-primary/20 shadow-glow shadow-primary/5">
+                  <Star className="h-8 w-8 text-primary" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700/50">
+          <Card className="bg-card/40 backdrop-blur-sm border-border">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-slate-400 text-sm">Available Events</p>
-                  <p className="text-3xl font-bold text-white mt-1">{events.length}</p>
+                  <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest">Available Events</p>
+                  <p className="text-4xl font-semibold text-white mt-1 font-bitcount tracking-normal">{events.length}</p>
                 </div>
-                <div className="p-3 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl">
-                  <TrendingUp className="h-8 w-8 text-white" />
+                <div className="p-3 bg-primary/10 rounded-xl border border-primary/20 shadow-glow shadow-primary/5">
+                  <TrendingUp className="h-8 w-8 text-primary" />
                 </div>
               </div>
             </CardContent>
@@ -307,12 +309,18 @@ export default function UserDashboard() {
 
         {/* Tabs */}
         <Tabs defaultValue="events" className="space-y-6">
-          <TabsList className="bg-slate-800/50 border border-slate-700/50">
-            <TabsTrigger value="events" className="data-[state=active]:bg-indigo-600">
+          <TabsList className="bg-muted/30 border border-border p-1 gap-1">
+            <TabsTrigger
+              value="events"
+              className="rounded-full px-6 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300"
+            >
               <Calendar className="mr-2 h-4 w-4" />
               Available Events
             </TabsTrigger>
-            <TabsTrigger value="tickets" className="data-[state=active]:bg-indigo-600">
+            <TabsTrigger
+              value="tickets"
+              className="rounded-full px-6 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300"
+            >
               <QrCode className="mr-2 h-4 w-4" />
               All Tickets
             </TabsTrigger>
@@ -321,61 +329,58 @@ export default function UserDashboard() {
           {/* Available Events Tab */}
           <TabsContent value="events" className="space-y-4">
             {events.length === 0 ? (
-              <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700/50">
+              <Card className="bg-card/30 border-border border-dashed">
                 <CardContent className="p-12 text-center">
-                  <Calendar className="h-16 w-16 text-slate-600 mx-auto mb-4" />
-                  <p className="text-slate-400 text-lg">No events available at the moment</p>
+                  <Calendar className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
+                  <p className="text-muted-foreground text-lg font-medium">No events available at the moment</p>
                 </CardContent>
               </Card>
             ) : (
               <div className="grid md:grid-cols-2 gap-6">
                 {events.map((event) => (
-                  <Card key={event.id} className="bg-slate-800/50 backdrop-blur-sm border-slate-700/50 hover:border-indigo-500/50 transition-all">
-                    <CardHeader>
+                  <Card key={event.id} className="bg-card/40 backdrop-blur-sm border-border hover:border-primary/50 transition-all duration-300 group">
+                    <CardHeader className="border-b border-border/50 pb-4">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <CardTitle className="text-white text-xl mb-2">{event.name}</CardTitle>
-                          <CardDescription className="text-slate-400 line-clamp-2">{event.description}</CardDescription>
+                          <CardTitle className="text-white text-xl mb-2 group-hover:text-primary transition-colors">{event.name}</CardTitle>
+                          <CardDescription className="text-muted-foreground line-clamp-2">{event.description}</CardDescription>
                         </div>
-                        <Badge className="bg-gradient-to-r from-emerald-500 to-green-500 text-white px-3 py-1">
+                        <Badge className="bg-primary/20 text-primary border-primary/30 px-3 py-1 font-bold">
                           ${event.price}
                         </Badge>
                       </div>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-2">
-                        <div className="flex items-center text-slate-300 text-sm">
-                          <Calendar className="mr-2 h-4 w-4 text-blue-400" />
-                          <span className="font-medium">Date:</span>
-                          <span className="ml-1">{new Date(event.date).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                    <CardContent className="space-y-4 pt-6">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="flex items-center text-muted-foreground text-xs uppercase tracking-widest font-bold">
+                          <Calendar className="mr-2 h-4 w-4 text-primary" />
+                          <span>{new Date(event.date).toLocaleDateString()}</span>
                         </div>
-                        <div className="flex items-center text-slate-300 text-sm">
-                          <Clock className="mr-2 h-4 w-4 text-orange-400" />
-                          <span className="font-medium">Time:</span>
-                          <span className="ml-1">{new Date(event.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
+                        <div className="flex items-center text-muted-foreground text-xs uppercase tracking-widest font-bold">
+                          <Clock className="mr-2 h-4 w-4 text-primary" />
+                          <span>{new Date(event.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
-                        <div className="flex items-center text-slate-300 text-sm">
-                          <MapPin className="mr-2 h-4 w-4 text-green-400" />
-                          <span className="font-medium">Location:</span>
-                          <span className="ml-1">{event.location}</span>
+                        <div className="flex items-center text-muted-foreground text-xs uppercase tracking-widest font-bold col-span-2">
+                          <MapPin className="mr-2 h-4 w-4 text-primary" />
+                          <span className="truncate">{event.location}</span>
                         </div>
-                        <div className="flex items-center text-slate-300 text-sm">
-                          <Ticket className="mr-2 h-4 w-4 text-purple-400" />
-                          <span className="font-medium">Availability:</span>
-                          <span className="ml-1">{event.available_tickets} / {event.total_tickets} tickets</span>
+                        <div className="flex items-center text-muted-foreground text-xs uppercase tracking-widest font-bold col-span-2">
+                          <Ticket className="mr-2 h-4 w-4 text-primary" />
+                          <span>{event.available_tickets} / {event.total_tickets} Available</span>
                         </div>
                       </div>
-                      
+
                       {event.available_tickets > 0 ? (
-                        <Button 
+                        <Button
+                          variant="solid"
                           onClick={() => handleEnrollClick(event)}
-                          className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold shadow-lg"
+                          className="w-full shadow-glow shadow-primary/10"
                         >
                           <UserIcon className="mr-2 h-4 w-4" />
                           Enroll Now
                         </Button>
                       ) : (
-                        <Button disabled className="w-full bg-slate-700 text-slate-400">
+                        <Button disabled variant="ghost" className="w-full opacity-50 cursor-not-allowed">
                           Sold Out
                         </Button>
                       )}
@@ -393,45 +398,44 @@ export default function UserDashboard() {
               <p className="text-slate-400">View all tickets issued by organizers for upcoming events</p>
             </div>
             {userTickets.length === 0 ? (
-              <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700/50">
+              <Card className="bg-card/30 border-border border-dashed">
                 <CardContent className="p-12 text-center">
-                  <QrCode className="h-16 w-16 text-slate-600 mx-auto mb-4" />
-                  <p className="text-slate-400 text-lg">No tickets have been issued yet</p>
-                  <p className="text-slate-500 text-sm mt-2">Tickets will appear here when organizers create them</p>
+                  <QrCode className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
+                  <p className="text-muted-foreground text-lg font-medium">No tickets have been issued yet</p>
+                  <p className="text-muted-foreground/60 text-sm mt-2">Tickets will appear here when organizers create them</p>
                 </CardContent>
               </Card>
             ) : (
               <div className="grid md:grid-cols-2 gap-6">
                 {userTickets.map((ticket: any) => (
-                  <Card key={ticket.id} className="bg-slate-800/50 backdrop-blur-sm border-slate-700/50 hover:border-indigo-500/50 transition-all">
-                    <CardHeader>
+                  <Card key={ticket.id} className="bg-card/40 backdrop-blur-sm border-border hover:border-primary/50 transition-all duration-300 group overflow-hidden">
+                    <div className={`h-1.5 w-full ${ticket.used ? 'bg-muted' : 'bg-primary'}`} />
+                    <CardHeader className="border-b border-border/50">
                       <div className="flex items-start justify-between">
-                        <CardTitle className="text-white">{ticket.event_name}</CardTitle>
-                        <Badge variant={ticket.used ? "secondary" : "default"} className={ticket.used ? "bg-slate-600" : "bg-green-600"}>
-                          {ticket.used ? "Used" : "Available"}
+                        <CardTitle className="text-white group-hover:text-primary transition-colors">{ticket.event_name}</CardTitle>
+                        <Badge className={`${ticket.used
+                          ? 'bg-muted text-muted-foreground border-border'
+                          : 'bg-primary/20 text-primary border-primary/30'} px-3 py-1 font-bold`}>
+                          {ticket.used ? "Used" : "Valid"}
                         </Badge>
                       </div>
                     </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="flex items-center text-slate-300 text-sm">
-                        <Calendar className="mr-2 h-4 w-4 text-blue-400" />
-                        {ticket.event_date ? new Date(ticket.event_date).toLocaleDateString() : 'TBA'}
-                      </div>
-                      <div className="flex items-center text-slate-300 text-sm">
-                        <MapPin className="mr-2 h-4 w-4 text-green-400" />
-                        {ticket.event_location || 'Location TBA'}
-                      </div>
-                      <div className="flex items-center text-slate-300 text-sm">
-                        <QrCode className="mr-2 h-4 w-4 text-purple-400" />
-                        Ticket ID: {ticket.ticket_id}
-                      </div>
-                      {ticket.owner && (
-                        <div className="flex items-center text-slate-300 text-sm">
-                          <UserCircle className="mr-2 h-4 w-4 text-yellow-400" />
-                          Owner: {ticket.owner}
+                    <CardContent className="space-y-4 pt-6">
+                      <div className="grid grid-cols-2 gap-3 text-xs uppercase tracking-widest font-bold text-muted-foreground">
+                        <div className="flex items-center">
+                          <Calendar className="mr-2 h-4 w-4 text-primary" />
+                          {ticket.event_date ? new Date(ticket.event_date).toLocaleDateString() : 'TBA'}
                         </div>
-                      )}
-                      <Button variant="outline" className="w-full border-slate-700 text-white hover:border-indigo-500">
+                        <div className="flex items-center">
+                          <MapPin className="mr-2 h-4 w-4 text-primary" />
+                          <span className="truncate">{ticket.event_location || 'Location TBA'}</span>
+                        </div>
+                        <div className="flex items-center col-span-2 font-mono text-primary/80 lowercase">
+                          <QrCode className="mr-2 h-4 w-4 text-primary" />
+                          ID: {ticket.ticket_id}
+                        </div>
+                      </div>
+                      <Button variant="outline" className="w-full">
                         <QrCode className="mr-2 h-4 w-4" />
                         Show QR Code
                       </Button>
@@ -446,26 +450,29 @@ export default function UserDashboard() {
 
       {/* Enrollment Dialog */}
       <Dialog open={enrollmentOpen} onOpenChange={setEnrollmentOpen}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-              Enroll in Event
+        <DialogContent className="bg-background border-border text-foreground overflow-hidden max-w-md">
+          <div className="absolute top-0 left-0 w-full h-1.5 bg-primary" />
+          <DialogHeader className="pt-4">
+            <DialogTitle className="text-3xl font-bold font-bitcount">
+              Enroll in <span className="text-primary">Event</span>
             </DialogTitle>
-            <DialogDescription className="text-slate-400">
+            <DialogDescription className="text-muted-foreground pt-2">
               {selectedEvent && (
-                <div className="mt-2 space-y-1">
-                  <p className="text-white font-semibold text-lg">{selectedEvent.name}</p>
-                  <p className="text-sm">{new Date(selectedEvent.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                  <p className="text-sm">{selectedEvent.location}</p>
+                <div className="bg-muted/30 p-4 rounded-lg border border-border mt-2">
+                  <p className="text-white font-bold text-lg leading-tight">{selectedEvent.name}</p>
+                  <div className="flex flex-col gap-1 mt-2 text-xs uppercase tracking-widest font-bold">
+                    <span className="flex items-center gap-2"><Calendar className="w-3 h-3 text-primary" />{new Date(selectedEvent.date).toLocaleDateString()}</span>
+                    <span className="flex items-center gap-2"><MapPin className="w-3 h-3 text-primary" />{selectedEvent.location}</span>
+                  </div>
                 </div>
               )}
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="fullName" className="text-white font-medium flex items-center">
-                <UserIcon className="mr-2 h-4 w-4 text-blue-400" />
+              <Label htmlFor="fullName" className="text-white font-bold text-xs uppercase tracking-widest flex items-center mb-1">
+                <UserIcon className="mr-2 h-3.5 w-3.5 text-primary" />
                 Full Name
               </Label>
               <Input
@@ -474,13 +481,13 @@ export default function UserDashboard() {
                 placeholder="Enter your full name"
                 value={enrollmentForm.fullName}
                 onChange={(e) => setEnrollmentForm(prev => ({ ...prev, fullName: e.target.value }))}
-                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500"
+                className="bg-card/50 border-border text-white placeholder:text-muted-foreground focus:border-primary/50"
               />
             </div>
-            
+
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-white font-medium flex items-center">
-                <Mail className="mr-2 h-4 w-4 text-purple-400" />
+              <Label htmlFor="email" className="text-white font-bold text-xs uppercase tracking-widest flex items-center mb-1">
+                <Mail className="mr-2 h-3.5 w-3.5 text-primary" />
                 Email Address
               </Label>
               <Input
@@ -489,33 +496,34 @@ export default function UserDashboard() {
                 placeholder="Enter your email address"
                 value={enrollmentForm.email}
                 onChange={(e) => setEnrollmentForm(prev => ({ ...prev, email: e.target.value }))}
-                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500"
+                className="bg-card/50 border-border text-white placeholder:text-muted-foreground focus:border-primary/50"
               />
             </div>
 
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 mt-4">
-              <p className="text-sm text-blue-300 flex items-start">
+            <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mt-4">
+              <p className="text-xs text-primary font-medium flex items-start leading-relaxed">
                 <CheckCircle className="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
-                <span>After confirming, your ticket will be generated and available in the "All Tickets" tab. You'll receive a unique ticket ID for verification.</span>
+                <span>After confirming, your ticket will be generated and available in the "All Tickets" tab. You'll receive a unique ticket ID for verification on the blockchain.</span>
               </p>
             </div>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 pt-4">
             <Button
               variant="outline"
               onClick={() => {
                 setEnrollmentOpen(false);
                 setEnrollmentForm({ fullName: '', email: '' });
               }}
-              className="flex-1 border-slate-700 text-white hover:bg-slate-800"
+              className="flex-1"
             >
               Cancel
             </Button>
             <Button
+              variant="solid"
               onClick={handleEnrollmentSubmit}
               disabled={!enrollmentForm.fullName || !enrollmentForm.email || enrolling}
-              className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+              className="flex-1 shadow-glow shadow-primary/20"
             >
               {enrolling ? 'Enrolling...' : 'Confirm Enrollment'}
             </Button>
