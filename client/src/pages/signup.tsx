@@ -6,6 +6,7 @@ import { useTheme } from 'next-themes';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { localAuth } from '@/lib/local-auth';
 import { useToast } from '@/hooks/use-toast';
+import { BackgroundPathsDecoration } from '@/components/ui/background-paths-decoration';
 
 export default function SignUpPage() {
   const [, setLocation] = useLocation();
@@ -182,178 +183,158 @@ export default function SignUpPage() {
         transition={{ duration: 1.25, ease: "easeInOut" }}
         className="relative z-10 mx-auto w-full max-w-xl p-4"
       >
-        <div className="mb-6 flex justify-center items-center">
-          <div className="bg-primary/20 p-2 rounded-lg border border-primary/30 shadow-glow shadow-primary/10">
-            <ShieldCheck className="h-8 w-8 text-primary" />
-          </div>
-          <span className="ml-2 text-3xl font-semibold font-bitcount tracking-normal">
-            <span className="text-white">BLOCK</span>
-            <span className="text-primary">TIX</span>
-          </span>
-        </div>
-
-        <div className="mb-6 text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Create Organizer Account</h1>
-          <p className="text-muted-foreground">
-            Already have an account?{" "}
-            <button onClick={() => setLocation('/login')} className="text-primary hover:underline font-bold">
-              Sign in.
-            </button>
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label htmlFor="name" className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
-              Full Name
-            </label>
-            <div className="relative group">
-              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-              <input
-                id="name"
-                name="name"
-                type="text"
-                placeholder="John Doe"
-                value={formData.name}
-                onChange={handleInputChange}
-                className={`w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background ${errors.name ? 'border-destructive focus:ring-destructive' : ''}`}
-                required
-              />
+        {/* Transparent Card Wrapper */}
+        <div className="bg-card/40 backdrop-blur-xl border border-border hover:border-primary/50 transition-all duration-500 shadow-glow shadow-primary/10 rounded-2xl p-8">
+          <div className="mb-6 flex justify-center items-center">
+            <div className="bg-primary/20 p-2 rounded-lg border border-primary/30 shadow-glow shadow-primary/10">
+              <ShieldCheck className="h-8 w-8 text-primary" />
             </div>
-            {errors.name && <p className="mt-1 text-xs text-destructive font-medium">{errors.name}</p>}
+            <span className="ml-2 text-3xl font-semibold font-bitcount tracking-normal">
+              <span className="text-white">BLOCK</span>
+              <span className="text-primary">TIX</span>
+            </span>
           </div>
 
-          <div>
-            <label htmlFor="email" className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
-              Email Address
-            </label>
-            <div className="relative group">
-              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-              <input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="organizer@example.com"
-                value={formData.email}
-                onChange={handleInputChange}
-                className={`w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background ${errors.email ? 'border-destructive focus:ring-destructive' : ''}`}
-                required
-              />
-            </div>
-            {errors.email && <p className="mt-1 text-xs text-destructive font-medium">{errors.email}</p>}
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="password" className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                Password
-              </label>
-              <div className="relative group">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  className={`w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background ${errors.password ? 'border-destructive focus:ring-destructive' : ''}`}
-                  required
-                />
-              </div>
-              {errors.password && <p className="mt-1 text-xs text-destructive font-medium">{errors.password}</p>}
-            </div>
-
-            <div>
-              <label htmlFor="confirmPassword" className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                Confirm
-              </label>
-              <div className="relative group">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                <input
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  type="password"
-                  placeholder="••••••••"
-                  value={formData.confirmPassword}
-                  onChange={handleInputChange}
-                  className={`w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background ${errors.confirmPassword ? 'border-destructive focus:ring-destructive' : ''}`}
-                  required
-                />
-              </div>
-              {errors.confirmPassword && <p className="mt-1 text-xs text-destructive font-medium">{errors.confirmPassword}</p>}
-            </div>
-          </div>
-
-          <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 flex gap-3">
-            <CheckCircle className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-            <p className="text-sm text-primary font-medium leading-relaxed">
-              By creating an account, you'll be able to create events, manage tickets, and access real-time blockchain-verified analytics.
+          <div className="mb-6 text-center">
+            <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Create Organizer Account</h1>
+            <p className="text-muted-foreground">
+              Already have an account?{" "}
+              <button onClick={() => setLocation('/login')} className="text-primary hover:underline font-bold">
+                Sign in.
+              </button>
             </p>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full h-12 rounded-lg bg-primary text-lg font-bold text-primary-foreground transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-glow shadow-primary/20"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="h-5 w-5 animate-spin" />
-                Processing...
-              </>
-            ) : (
-              <>
-                <Sparkles className="h-5 w-5" />
-                Create Organizer Account
-              </>
-            )}
-          </button>
-        </form>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label htmlFor="name" className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Full Name
+              </label>
+              <div className="relative group">
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  placeholder="John Doe"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  className={`w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background ${errors.name ? 'border-destructive focus:ring-destructive' : ''}`}
+                  required
+                />
+              </div>
+              {errors.name && <p className="mt-1 text-xs text-destructive font-medium">{errors.name}</p>}
+            </div>
 
-        <div className="mt-8 text-center pt-6 border-t border-border flex flex-col gap-2">
-          <p className="text-muted-foreground text-sm font-medium">
-            Looking for user account?{' '}
+            <div>
+              <label htmlFor="email" className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Email Address
+              </label>
+              <div className="relative group">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="organizer@example.com"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  className={`w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background ${errors.email ? 'border-destructive focus:ring-destructive' : ''}`}
+                  required
+                />
+              </div>
+              {errors.email && <p className="mt-1 text-xs text-destructive font-medium">{errors.email}</p>}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="password" className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Password
+                </label>
+                <div className="relative group">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    placeholder="••••••••"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    className={`w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background ${errors.password ? 'border-destructive focus:ring-destructive' : ''}`}
+                    required
+                  />
+                </div>
+                {errors.password && <p className="mt-1 text-xs text-destructive font-medium">{errors.password}</p>}
+              </div>
+
+              <div>
+                <label htmlFor="confirmPassword" className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Confirm
+                </label>
+                <div className="relative group">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type="password"
+                    placeholder="••••••••"
+                    value={formData.confirmPassword}
+                    onChange={handleInputChange}
+                    className={`w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-muted-foreground/30 ring-1 ring-transparent transition-all focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background ${errors.confirmPassword ? 'border-destructive focus:ring-destructive' : ''}`}
+                    required
+                  />
+                </div>
+                {errors.confirmPassword && <p className="mt-1 text-xs text-destructive font-medium">{errors.confirmPassword}</p>}
+              </div>
+            </div>
+
+            <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 flex gap-3">
+              <CheckCircle className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+              <p className="text-sm text-primary font-medium leading-relaxed">
+                By creating an account, you'll be able to create events, manage tickets, and access real-time blockchain-verified analytics.
+              </p>
+            </div>
+
             <button
-              onClick={() => setLocation('/user-signup')}
-              className="text-primary font-bold hover:underline transition-colors"
+              type="submit"
+              disabled={loading}
+              className="w-full h-12 rounded-lg bg-primary text-lg font-bold text-primary-foreground transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-glow shadow-primary/20"
             >
-              User Signup
+              {loading ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-5 w-5" />
+                  Create Organizer Account
+                </>
+              )}
             </button>
+          </form>
+
+          <div className="mt-8 text-center pt-6 border-t border-border flex flex-col gap-2">
+            <p className="text-muted-foreground text-sm font-medium">
+              Looking for user account?{' '}
+              <button
+                onClick={() => setLocation('/user-signup')}
+                className="text-primary font-bold hover:underline transition-colors"
+              >
+                User Signup
+              </button>
+            </p>
+          </div>
+
+          <p className="mt-8 text-center text-xs text-muted-foreground font-medium uppercase tracking-widest">
+            By signing up, you agree to our{" "}
+            <a href="#" className="text-primary hover:underline font-bold">Terms & Conditions</a>
+            {" "}and{" "}
+            <a href="#" className="text-primary hover:underline font-bold">Privacy Policy</a>
           </p>
         </div>
-
-        <p className="mt-8 text-center text-xs text-muted-foreground font-medium uppercase tracking-widest">
-          By signing up, you agree to our{" "}
-          <a href="#" className="text-primary hover:underline font-bold">Terms & Conditions</a>
-          {" "}and{" "}
-          <a href="#" className="text-primary hover:underline font-bold">Privacy Policy</a>
-        </p>
       </motion.div>
-      <BackgroundDecoration />
+      <BackgroundPathsDecoration />
     </div>
   );
-}
-
-const BackgroundDecoration: React.FC = () => {
-  const { theme } = useTheme()
-  const isDarkTheme = theme === "dark"
-
-  return (
-    <div
-      className="absolute right-0 top-0 z-0 size-[50vw] pointer-events-none"
-      style={{
-        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke-width='2' stroke='rgb(30 58 138 / 0.5)'%3e%3cpath d='M0 .5H31.5V32'/%3e%3c/svg%3e")`,
-      }}
-    >
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage: isDarkTheme
-            ? "radial-gradient(100% 100% at 100% 0%, rgba(9,9,11,0), rgba(9,9,11,1))"
-            : "radial-gradient(100% 100% at 100% 0%, rgba(255,255,255,0), rgba(255,255,255,1))",
-        }}
-      />
-    </div>
-  )
 }

@@ -6,6 +6,7 @@ import { useTheme } from 'next-themes';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { localAuth } from '@/lib/local-auth';
 import { useToast } from '@/hooks/use-toast';
+import { BackgroundPathsDecoration } from '@/components/ui/background-paths-decoration';
 
 export default function UserSignupPage() {
   const [, setLocation] = useLocation();
@@ -108,102 +109,106 @@ export default function UserSignupPage() {
         transition={{ duration: 1.25, ease: "easeInOut" }}
         className="relative z-10 mx-auto w-full max-w-xl p-4"
       >
-        <div className="mb-6 flex justify-center items-center">
-          <div className="bg-primary/20 p-2 rounded-lg border border-primary/30 shadow-glow shadow-primary/10">
-            <ShieldCheck className="h-8 w-8 text-primary" />
+        {/* Transparent Card Wrapper */}
+        <div className="bg-card/40 backdrop-blur-xl border border-border hover:border-primary/50 transition-all duration-500 shadow-glow shadow-primary/10 rounded-2xl p-8">
+          <div className="mb-6 flex justify-center items-center">
+            <div className="bg-primary/20 p-2 rounded-lg border border-primary/30 shadow-glow shadow-primary/10">
+              <ShieldCheck className="h-8 w-8 text-primary" />
+            </div>
+            <span className="ml-2 text-3xl font-semibold font-bitcount tracking-normal">
+              <span className="text-white">BLOCK</span>
+              <span className="text-primary">TIX</span>
+            </span>
           </div>
-          <span className="ml-2 text-3xl font-semibold font-bitcount tracking-normal">
-            <span className="text-white">BLOCK</span>
-            <span className="text-primary">TIX</span>
-          </span>
-        </div>
 
-        <div className="mb-6 text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Create User Account</h1>
-          <p className="text-muted-foreground">
-            Already have an account?{" "}
-            <button onClick={() => setLocation('/user-login')} className="text-primary hover:underline font-bold">
-              Sign in.
+          <div className="mb-6 text-center">
+            <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Create User Account</h1>
+            <p className="text-muted-foreground">
+              Already have an account?{" "}
+              <button onClick={() => setLocation('/user-login')} className="text-primary hover:underline font-bold">
+                Sign in.
+              </button>
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">Full Name</label>
+              <div className="relative group">
+                <UserCircle className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                <input
+                  type="text"
+                  placeholder="John Doe"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder-zinc-400 ring-1 ring-transparent focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">Email Address</label>
+              <div className="relative group">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder-zinc-400 ring-1 ring-transparent focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">Password</label>
+                <div className="relative group">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground ring-1 ring-transparent focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background"
+                    required
+                  />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors">
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">Confirm</label>
+                <div className="relative group">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={formData.confirmPassword}
+                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                    className="w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground ring-1 ring-transparent focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background"
+                    required
+                  />
+                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors">
+                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full h-12 rounded-lg bg-primary text-lg font-bold text-primary-foreground transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 shadow-glow shadow-primary/20"
+            >
+              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Sparkles className="h-5 w-5" /> Create Account</>}
             </button>
-          </p>
-        </div>
+          </form>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">Full Name</label>
-            <div className="relative group">
-              <UserCircle className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-              <input
-                type="text"
-                placeholder="John Doe"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder-zinc-400 ring-1 ring-transparent focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background"
-                required
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">Email Address</label>
-            <div className="relative group">
-              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-              <input
-                type="email"
-                placeholder="you@example.com"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder-zinc-400 ring-1 ring-transparent focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">Password</label>
-              <div className="relative group">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground ring-1 ring-transparent focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background"
-                  required
-                />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors">
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground">Confirm</label>
-              <div className="relative group">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                <input
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  value={formData.confirmPassword}
-                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                  className="w-full pl-10 h-12 rounded-lg border border-border bg-card px-3 py-2 text-foreground ring-1 ring-transparent focus:outline-0 focus:ring-primary/50 focus:border-primary focus:bg-background"
-                  required
-                />
-                <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors">
-                  {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full h-12 rounded-lg bg-primary text-lg font-bold text-primary-foreground transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 shadow-glow shadow-primary/20"
-          >
-            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Sparkles className="h-5 w-5" /> Create Account</>}
-          </button>
-        </form>
+        </div> {/* Closes the bg-card/40 wrapper */}
 
         <div className="mt-8 text-center pt-6 border-t border-border flex flex-col gap-2">
           <p className="text-muted-foreground text-sm font-medium">
@@ -214,30 +219,7 @@ export default function UserSignupPage() {
           </p>
         </div>
       </motion.div>
-      <BackgroundDecoration />
+      <BackgroundPathsDecoration />
     </div>
   );
-}
-
-const BackgroundDecoration: React.FC = () => {
-  const { theme } = useTheme()
-  const isDarkTheme = theme === "dark"
-
-  return (
-    <div
-      className="absolute right-0 top-0 z-0 size-[50vw] pointer-events-none"
-      style={{
-        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke-width='2' stroke='rgb(79 70 229 / 0.4)'%3e%3cpath d='M0 .5H31.5V32'/%3e%3c/svg%3e")`,
-      }}
-    >
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage: isDarkTheme
-            ? "radial-gradient(100% 100% at 100% 0%, rgba(9,9,11,0), rgba(9,9,11,1))"
-            : "radial-gradient(100% 100% at 100% 0%, rgba(255,255,255,0), rgba(255,255,255,1))",
-        }}
-      />
-    </div>
-  )
 }
