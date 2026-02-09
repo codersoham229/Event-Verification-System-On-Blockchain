@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useLocation } from 'wouter';
 import { motion } from 'framer-motion';
 import { ChevronLeft, Github, Twitter, ShieldCheck, Mail, Lock, Loader2, LogIn, Sparkles } from 'lucide-react';
-import { useTheme } from 'next-themes';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { localAuth } from '@/lib/local-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -277,5 +276,3 @@ const SocialButton: React.FC<{
     <span>{children}</span>
   </button>
 )
-
-

@@ -249,7 +249,7 @@ const renderCanvas = function () {
     resizeCanvas();
 };
 
-import { ReactTyped } from "react-typed";
+import { useState, useEffect } from "react";
 
 interface TypeWriterProps {
     strings: string[];
@@ -257,18 +257,38 @@ interface TypeWriterProps {
 
 
 const TypeWriter = ({ strings }: TypeWriterProps) => {
+    const [currentStringIndex, setCurrentStringIndex] = useState(0);
+    const [currentText, setCurrentText] = useState("");
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    useEffect(() => {
+        const currentFullText = strings[currentStringIndex];
+        
+        const timeout = setTimeout(() => {
+            if (!isDeleting) {
+                if (currentText.length < currentFullText.length) {
+                    setCurrentText(currentFullText.substring(0, currentText.length + 1));
+                } else {
+                    setTimeout(() => setIsDeleting(true), 1000);
+                }
+            } else {
+                if (currentText.length > 0) {
+                    setCurrentText(currentText.substring(0, currentText.length - 1));
+                } else {
+                    setIsDeleting(false);
+                    setCurrentStringIndex((currentStringIndex + 1) % strings.length);
+                }
+            }
+        }, isDeleting ? 20 : 80);
+
+        return () => clearTimeout(timeout);
+    }, [currentText, isDeleting, currentStringIndex, strings]);
+
     return (
-        <ReactTyped
-            loop
-            typeSpeed={80}
-            backSpeed={20}
-            strings={strings}
-            smartBackspace
-            backDelay={1000}
-            loopCount={0}
-            showCursor
-            cursorChar="|"
-        />
+        <span>
+            {currentText}
+            <span className="animate-pulse">|</span>
+        </span>
     );
 };
 

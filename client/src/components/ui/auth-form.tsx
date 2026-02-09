@@ -3,7 +3,6 @@
 import * as React from "react"
 import { ChevronLeft, Github, Twitter, ShieldCheck } from "lucide-react"
 import { motion } from "framer-motion"
-import { useTheme } from "next-themes"
 
 const AuthForm: React.FC = () => {
     return (
@@ -171,9 +170,6 @@ const TermsAndConditions: React.FC = () => (
 )
 
 const BackgroundDecoration: React.FC = () => {
-    const { theme } = useTheme()
-    const isDarkTheme = theme === "dark"
-
     return (
         <div
             className="absolute right-0 top-0 z-0 size-[50vw]"
@@ -184,9 +180,7 @@ const BackgroundDecoration: React.FC = () => {
             <div
                 className="absolute inset-0"
                 style={{
-                    backgroundImage: isDarkTheme
-                        ? "radial-gradient(100% 100% at 100% 0%, rgba(9,9,11,0), rgba(9,9,11,1))"
-                        : "radial-gradient(100% 100% at 100% 0%, rgba(255,255,255,0), rgba(255,255,255,1))",
+                    backgroundImage: "radial-gradient(100% 100% at 100% 0%, rgba(255,255,255,0), rgba(255,255,255,1))",
                 }}
             />
         </div>

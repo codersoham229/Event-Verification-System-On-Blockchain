@@ -15,7 +15,6 @@ import UserLoginPage from "@/pages/user-login";
 import UserDashboardPage from "@/pages/user-dashboard";
 import NeonButtonDemo from "@/pages/neon-button-demo";
 import { BackgroundBeamsDemo } from "@/components/background-beams-demo";
-import { ThemeProvider } from "next-themes";
 import Showcase from "@/pages/demo";
 
 function Router() {
@@ -44,14 +43,12 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-        <AuthProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Router />
-          </TooltipProvider>
-        </AuthProvider>
-      </ThemeProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Router />
+        </TooltipProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

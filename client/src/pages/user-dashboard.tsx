@@ -246,7 +246,7 @@ export default function UserDashboard() {
                 {user?.user_metadata?.name || user?.email}
               </Badge>
               <Button
-                variant="outline"
+                variant="ghost"
                 onClick={handleLogout}
                 className="text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-400 font-medium"
               >
@@ -510,7 +510,7 @@ export default function UserDashboard() {
 
           <div className="flex gap-3 pt-4">
             <Button
-              variant="outline"
+              variant="ghost"
               onClick={() => {
                 setEnrollmentOpen(false);
                 setEnrollmentForm({ fullName: '', email: '' });

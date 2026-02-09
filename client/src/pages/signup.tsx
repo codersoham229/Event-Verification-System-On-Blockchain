@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useLocation } from 'wouter';
 import { motion } from 'framer-motion';
 import { ChevronLeft, ShieldCheck, Mail, Lock, User, Loader2, CheckCircle, Sparkles, LogIn } from 'lucide-react';
-import { useTheme } from 'next-themes';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { localAuth } from '@/lib/local-auth';
 import { useToast } from '@/hooks/use-toast';
