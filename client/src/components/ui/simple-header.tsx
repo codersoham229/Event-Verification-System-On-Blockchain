@@ -1,10 +1,16 @@
 'use client';
 
 import React from 'react';
-import { Ticket } from 'lucide-react';
+import { Ticket, ChevronDown } from 'lucide-react';
 import { Sheet, SheetContent, SheetFooter } from '@/components/ui/sheet';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { MenuToggle } from '@/components/ui/menu-toggle';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useLocation } from 'wouter';
 
 export function SimpleHeader() {
@@ -60,13 +66,31 @@ export function SimpleHeader() {
                             {link.label}
                         </a>
                     ))}
-                    <Button
-                        variant="ghost"
-                        className="text-xs font-bold uppercase tracking-widest text-white border border-border bg-card hover:bg-muted"
-                        onClick={() => setLocation('/login')}
-                    >
-                        Login
-                    </Button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                className="text-xs font-bold uppercase tracking-widest text-white border border-border bg-card hover:bg-muted"
+                            >
+                                Login
+                                <ChevronDown className="ml-2 h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="bg-card border-border">
+                            <DropdownMenuItem 
+                                onClick={() => setLocation('/login')}
+                                className="text-xs font-bold uppercase tracking-widest cursor-pointer hover:bg-muted focus:bg-muted"
+                            >
+                                🎯 Organizer Login
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                                onClick={() => setLocation('/user-login')}
+                                className="text-xs font-bold uppercase tracking-widest cursor-pointer hover:bg-muted focus:bg-muted"
+                            >
+                                👤 User Login
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                     <Button
                         className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold uppercase tracking-widest px-6 shadow-glow shadow-primary/20"
                         onClick={() => setLocation('/signup')}
@@ -114,19 +138,30 @@ export function SimpleHeader() {
                             ))}
                         </div>
                         <SheetFooter className="border-t border-border bg-card p-6 gap-3">
-                            <Button
-                                variant="outline"
-                                className="flex-1 text-xs font-bold uppercase tracking-widest border-border bg-background"
-                                onClick={() => { setLocation('/login'); setOpen(false); }}
-                            >
-                                Login
-                            </Button>
-                            <Button
-                                className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold uppercase tracking-widest shadow-glow shadow-primary/20"
-                                onClick={() => { setLocation('/signup'); setOpen(false); }}
-                            >
-                                Get Started
-                            </Button>
+                            <div className="flex flex-col gap-3 w-full">
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Login As:</div>
+                                <Button
+                                    variant="outline"
+                                    className="w-full text-xs font-bold uppercase tracking-widest border-border bg-background"
+                                    onClick={() => { setLocation('/login'); setOpen(false); }}
+                                >
+                                    🎯 Organizer
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    className="w-full text-xs font-bold uppercase tracking-widest border-border bg-background"
+                                    onClick={() => { setLocation('/user-login'); setOpen(false); }}
+                                >
+                                    👤 User
+                                </Button>
+                                <div className="h-px bg-border my-2"></div>
+                                <Button
+                                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold uppercase tracking-widest shadow-glow shadow-primary/20"
+                                    onClick={() => { setLocation('/signup'); setOpen(false); }}
+                                >
+                                    Get Started
+                                </Button>
+                            </div>
                         </SheetFooter>
                     </SheetContent>
                 </Sheet>

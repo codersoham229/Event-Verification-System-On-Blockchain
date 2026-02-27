@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { web3Provider } from './web3';
-import { Event, Ticket } from '@/types/web3';
+import type { Event as EventType, Ticket as TicketType } from '@/types/web3';
 
 // Event Ticketing Contract ABI (simplified, human-readable format)
 const EVENT_TICKETING_ABI = [
@@ -62,7 +62,7 @@ export class ContractService {
   }
 
   private async getReadOnlyContract(): Promise<ethers.Contract> {
-    let provider = web3Provider.getProvider();
+    let provider: ethers.Provider | null = web3Provider.getProvider();
     
     // If provider not initialized, try to initialize it
     if (!provider && window.ethereum) {
@@ -308,7 +308,7 @@ export class ContractService {
     }
   }
 
-  async getEvent(eventId: string): Promise<Event> {
+  async getEvent(eventId: string): Promise<EventType> {
     try {
       const contract = await this.getReadOnlyContract();
       const result = await contract.getEvent(eventId);
@@ -334,7 +334,7 @@ export class ContractService {
     }
   }
 
-  async getTicket(tokenId: string): Promise<Ticket> {
+  async getTicket(tokenId: string): Promise<TicketType> {
     try {
       const contract = await this.getReadOnlyContract();
       const result = await contract.getTicket(tokenId);

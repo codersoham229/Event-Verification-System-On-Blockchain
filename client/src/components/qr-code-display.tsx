@@ -11,7 +11,7 @@ interface QRCodeDisplayProps {
   size?: number;
 }
 
-export function QRCodeDisplay({ data, title, subtitle, size = 160 }: QRCodeDisplayProps) {
+export function QRCodeDisplay({ data, title, subtitle, size = 256 }: QRCodeDisplayProps) {
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
@@ -99,50 +99,54 @@ export function QRCodeDisplay({ data, title, subtitle, size = 160 }: QRCodeDispl
   }, [data]);
 
   return (
-    <Card className="p-6 text-center" data-testid="card-qr-code">
-      <div className="bg-white border-2 border-dashed border-slate-300 rounded-lg p-8 mb-6">
+    <Card className="p-4 sm:p-6 text-center border-0 shadow-none bg-transparent" data-testid="card-qr-code">
+      <div className="bg-white rounded-xl p-4 sm:p-6 mb-4 shadow-sm">
         {qrCodeUrl ? (
           <img
             src={qrCodeUrl}
             alt={`QR Code for ${title}`}
-            className="w-40 h-40 mx-auto mb-4 rounded"
+            className="w-full max-w-[280px] h-auto mx-auto mb-3 rounded-lg"
             data-testid="img-qr-code"
           />
         ) : (
-          <div className="w-40 h-40 bg-slate-200 rounded mx-auto mb-4 flex items-center justify-center">
-            <QrCode className="w-16 h-16 text-slate-400" />
+          <div className="w-full max-w-[280px] aspect-square bg-slate-200 rounded-lg mx-auto mb-3 flex items-center justify-center">
+            <QrCode className="w-16 h-16 text-slate-400 animate-pulse" />
           </div>
         )}
-        <p className="text-sm text-slate-700 font-medium" data-testid="text-qr-title">
-          {title}
-        </p>
+        {title && (
+          <p className="text-sm text-slate-700 font-medium" data-testid="text-qr-title">
+            {title}
+          </p>
+        )}
         {subtitle && (
-          <p className="text-xs text-slate-500 font-mono mt-1" data-testid="text-qr-subtitle">
+          <p className="text-xs text-slate-500 font-mono mt-1 break-all px-2" data-testid="text-qr-subtitle">
             {subtitle}
           </p>
         )}
       </div>
 
-      <div className="flex space-x-3">
-        <Button
-          onClick={downloadQRCode}
-          variant="outline"
-          className="flex-1"
-          data-testid="button-download-qr"
-        >
-          <Download className="w-4 h-4 mr-2" />
-          Download QR
-        </Button>
-        <Button
-          onClick={shareData}
-          variant="outline"
-          className="flex-1"
-          data-testid="button-share-qr"
-        >
-          <Share2 className="w-4 h-4 mr-2" />
-          Share
-        </Button>
-      </div>
+      {(title || subtitle) && (
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+          <Button
+            onClick={downloadQRCode}
+            variant="outline"
+            className="flex-1 text-xs sm:text-sm"
+            data-testid="button-download-qr"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Download
+          </Button>
+          <Button
+            onClick={shareData}
+            variant="outline"
+            className="flex-1 text-xs sm:text-sm"
+            data-testid="button-share-qr"
+          >
+            <Share2 className="w-4 h-4 mr-2" />
+            Share
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }

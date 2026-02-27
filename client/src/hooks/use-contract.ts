@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { contractService } from '@/lib/contract';
-import { Event, Ticket, TransactionStatus } from '@/types/web3';
+import type { Event as EventType, Ticket as TicketType, TransactionStatus } from '@/types/web3';
 import { useToast } from '@/hooks/use-toast';
 
 export function useContract() {
@@ -41,6 +41,11 @@ export function useContract() {
         description: `Event created successfully with ID: ${result.eventId}`
       });
 
+      // Auto-reset transaction status after 3 seconds
+      setTimeout(() => {
+        setTransactionStatus({ status: 'idle' });
+      }, 3000);
+
       return result;
     } catch (error: any) {
       setTransactionStatus({
@@ -76,6 +81,11 @@ export function useContract() {
         title: "Ticket Minted!",
         description: `Ticket minted successfully with ID: ${result.ticketId}`
       });
+
+      // Auto-reset transaction status after 3 seconds
+      setTimeout(() => {
+        setTransactionStatus({ status: 'idle' });
+      }, 3000);
 
       return result;
     } catch (error: any) {
@@ -173,7 +183,7 @@ export function useContract() {
     }
   }, [toast]);
 
-  const getEvent = useCallback(async (eventId: string): Promise<Event | null> => {
+  const getEvent = useCallback(async (eventId: string): Promise<EventType | null> => {
     try {
       return await contractService.getEvent(eventId);
     } catch (error: any) {
@@ -186,7 +196,7 @@ export function useContract() {
     }
   }, [toast]);
 
-  const getTicket = useCallback(async (tokenId: string): Promise<Ticket | null> => {
+  const getTicket = useCallback(async (tokenId: string): Promise<TicketType | null> => {
     try {
       return await contractService.getTicket(tokenId);
     } catch (error: any) {
