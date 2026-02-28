@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
+
+import { ApprovedAdsBar } from '@/components/approved-ads-bar';
 import { useAuth } from '@/lib/auth-context';
 import { useWallet } from '@/hooks/use-wallet';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -101,8 +103,24 @@ export default function UserDashboard() {
   
   // Subscription
   const [subscriptionDialogOpen, setSubscriptionDialogOpen] = useState(false);
-  const [userSubscription, setUserSubscription] = useState<'free' | 'premium' | 'gold'>('free');
+  const [userSubscription, setUserSubscription] = useState<'free' | 'premium' | 'gold'>(
+    () => (localStorage.getItem('userSubscription') as 'free' | 'premium' | 'gold') || 'free'
+  );
   
+  // Persist subscription tier
+  useEffect(() => {
+    localStorage.setItem('userSubscription', userSubscription);
+  }, [userSubscription]);
+
+  // Test Mode (bypasses all payments)
+  const [testMode, setTestMode] = useState(() => localStorage.getItem('testMode') === 'true');
+  const toggleTestMode = () => {
+    const next = !testMode;
+    setTestMode(next);
+    localStorage.setItem('testMode', String(next));
+    toast({ title: next ? '🧪 Test Mode ON' : '🔒 Test Mode OFF', description: next ? 'All payments bypassed — free testing!' : 'Normal payment flow restored.' });
+  };
+
   // Ad Request
   const [adRequestDialogOpen, setAdRequestDialogOpen] = useState(false);
   const [adRequestForm, setAdRequestForm] = useState({ 
@@ -127,7 +145,7 @@ export default function UserDashboard() {
   const [organizerMessages, setOrganizerMessages] = useState<any[]>([]);
   
   // Sidebar and Payment
-  const [activeSidebarSection, setActiveSidebarSection] = useState<'dashboard' | 'settings' | 'payments' | 'attended' | 'pending'>('dashboard');
+  const [activeSidebarSection, setActiveSidebarSection] = useState<'dashboard' | 'settings' | 'payments' | 'attended' | 'pending' | 'badges'>('dashboard');
   const [paymentHistory, setPaymentHistory] = useState<any[]>([
     { id: 1, type: 'Subscription', plan: 'Premium', amount: '₹799', date: new Date(Date.now() - 86400000 * 15), status: 'completed' },
     { id: 2, type: 'Event Ticket', eventName: 'Web3 Summit', amount: '₹0.03 ETH', date: new Date(Date.now() - 86400000 * 7), status: 'completed' },
@@ -138,6 +156,16 @@ export default function UserDashboard() {
   
   // Approved Ads
   const [approvedAds, setApprovedAds] = useState<any[]>([]);
+
+  // Handle ?section=badges URL param (used by organizer's "View Badge" button)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const section = params.get('section') as any;
+    if (section && ['badges', 'settings', 'payments', 'attended', 'pending'].includes(section)) {
+      setActiveSidebarSection(section);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -375,35 +403,65 @@ export default function UserDashboard() {
           .eq('recipient_email', user.email)
           .order('created_at', { ascending: false });
 
-        if (ticketEmailsData) {
-          // Fetch event details for each ticket
-          const ticketsWithEvents = await Promise.all(
-            ticketEmailsData.map(async (ticket: any) => {
-              const { data: eventData } = await supabase
-                .from('events')
-                .select('name, date, location')
-                .eq('id', ticket.event_id)
-                .single();
+        if (ticketEmailsData && ticketEmailsData.length > 0) {
+          // Batch-fetch all events in ONE query (fixes N+1 and type mismatch)
+          const eventIds = [...new Set(ticketEmailsData.map((t: any) => Number(t.event_id)).filter(Boolean))];
+          const { data: eventsData } = await supabase
+            .from('events')
+            .select('id, name, date, location, organizer_name')
+            .in('id', eventIds);
 
-              // Find organizer name from demo events if available
-              const demoEvent = staticEvents.find(e => e.event_id === ticket.event_id);
+          const eventsMap = new Map((eventsData || []).map((e: any) => [Number(e.id), e]));
 
-              return {
-                id: ticket.id,
-                ticket_id: ticket.ticket_id,
-                event_id: ticket.event_id,
-                event_name: eventData?.name || 'Unknown Event',
-                event_date: eventData?.date || '',
-                event_location: eventData?.location || '',
-                recipient_email: ticket.recipient_email,
-                unique_hash: ticket.unique_hash,
-                qr_data: ticket.qr_data,
-                used: ticket.status === 'used',
-                purchased_at: ticket.created_at,
-                organizer_name: demoEvent?.organizer_name || 'Event Organizer'
-              };
-            })
-          );
+          const ticketsWithEvents = ticketEmailsData.map((ticket: any) => {
+            const eventData = eventsMap.get(Number(ticket.event_id));
+            const demoEvent = staticEvents.find(e => e.event_id === ticket.event_id);
+
+            // Extract embedded event data from qr_data as a final fallback
+            let embeddedName = '';
+            let embeddedDate = '';
+            let embeddedLocation = '';
+            try {
+              if (ticket.qr_data) {
+                // New format: compact JSON {"v":1,"eid":"1","tid":"2","n":"...","d":"...","l":"..."}
+                try {
+                  const parsed = JSON.parse(ticket.qr_data);
+                  if (parsed.eid) {
+                    embeddedName = parsed.n || '';
+                    embeddedDate = parsed.d || '';
+                    embeddedLocation = parsed.l || '';
+                  }
+                } catch {
+                  // Old format: URL with base64 'd' param
+                  if (ticket.qr_data.includes('&d=')) {
+                    const dParam = new URL(ticket.qr_data).searchParams.get('d');
+                    if (dParam) {
+                      const decoded = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(dParam)))));
+                      embeddedName = decoded.n || decoded.name || '';
+                      embeddedDate = decoded.d || decoded.date || '';
+                      embeddedLocation = decoded.l || decoded.location || '';
+                    }
+                  }
+                }
+              }
+            } catch { /* ignore */ }
+
+            return {
+              id: ticket.id,
+              ticket_id: ticket.ticket_id,
+              event_id: ticket.event_id,
+              event_name: eventData?.name || (ticket as any).event_name || demoEvent?.name || embeddedName || 'Unknown Event',
+              event_date: eventData?.date || (ticket as any).event_date || demoEvent?.date || embeddedDate || '',
+              event_location: eventData?.location || (ticket as any).event_location || demoEvent?.location || embeddedLocation || '',
+              recipient_email: ticket.recipient_email,
+              unique_hash: ticket.unique_hash,
+              qr_data: ticket.qr_data,
+              used: ticket.status === 'used',
+              badge_sent: ticket.badge_sent === true,
+              purchased_at: ticket.created_at,
+              organizer_name: eventData?.organizer_name || demoEvent?.organizer_name || 'Event Organizer'
+            };
+          });
           setUserTickets(ticketsWithEvents as any);
         }
       }
@@ -628,7 +686,20 @@ export default function UserDashboard() {
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              {/* Test Mode Toggle */}
+              <button
+                onClick={toggleTestMode}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${
+                  testMode
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-lg shadow-amber-500/20'
+                    : 'bg-muted/40 text-muted-foreground border-border hover:border-amber-500/40 hover:text-amber-400'
+                }`}
+                title={testMode ? 'Test Mode ON — click to disable' : 'Enable Test Mode (free)'}
+              >
+                <span className={`w-2 h-2 rounded-full ${testMode ? 'bg-amber-400 animate-pulse' : 'bg-muted-foreground'}`} />
+                {testMode ? '🧪 Test Mode' : 'Test Mode'}
+              </button>
               <Button
                 variant="ghost"
                 onClick={handleLogout}
@@ -641,6 +712,8 @@ export default function UserDashboard() {
           </div>
         </div>
       </header>
+
+      <ApprovedAdsBar />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -708,6 +781,23 @@ export default function UserDashboard() {
                     }`}>{eventsAttended}</Badge>
                   </button>
                   
+                  <button
+                    onClick={() => setActiveSidebarSection('badges')}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                      activeSidebarSection === 'badges' 
+                        ? 'bg-primary/20 text-primary border border-primary/30' 
+                        : 'text-muted-foreground hover:bg-muted/50'
+                    }`}
+                  >
+                    <Star className="h-5 w-5" />
+                    <span className="font-medium">My Badges</span>
+                    <Badge className={`ml-auto text-xs ${
+                      activeSidebarSection === 'badges'
+                        ? 'bg-primary/20 text-primary'
+                        : 'bg-muted text-muted-foreground'
+                    }`}>{eventsAttended}</Badge>
+                  </button>
+
                   <button
                     onClick={() => setActiveSidebarSection('pending')}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
@@ -1479,6 +1569,351 @@ export default function UserDashboard() {
               </div>
             )}
 
+            {/* Badges Section */}
+            {activeSidebarSection === 'badges' && (() => {
+              const badgeCount = eventsAttended;
+              const LEVELS = [
+                {
+                  min: 0, max: 4, name: 'Bronze Explorer', icon: '🥉',
+                  colorClass: 'from-amber-800/20 to-amber-900/10', borderClass: 'border-amber-700/40', textClass: 'text-amber-500',
+                  barFrom: 'from-amber-600', barTo: 'to-amber-400',
+                  perks: ['Early event announcements', 'Community forum access', 'Monthly newsletter'],
+                },
+                {
+                  min: 5, max: 9, name: 'Silver Trailblazer', icon: '🥈',
+                  colorClass: 'from-slate-400/20 to-slate-500/10', borderClass: 'border-slate-400/40', textClass: 'text-slate-300',
+                  barFrom: 'from-slate-400', barTo: 'to-slate-200',
+                  perks: ['5% discount on paid events', 'Priority support queue', 'Exclusive member badge', 'Early bird ticket access'],
+                },
+                {
+                  min: 10, max: 19, name: 'Gold Maverick', icon: '🥇',
+                  colorClass: 'from-yellow-500/20 to-yellow-600/10', borderClass: 'border-yellow-500/40', textClass: 'text-yellow-400',
+                  barFrom: 'from-yellow-500', barTo: 'to-yellow-300',
+                  perks: ['10% discount on all events', 'Priority seating at events', 'VIP lounge access', 'Dedicated event coordinator', 'Custom profile badge'],
+                },
+                {
+                  min: 20, max: 49, name: 'Diamond Legend', icon: '💎',
+                  colorClass: 'from-cyan-400/20 to-blue-500/10', borderClass: 'border-cyan-400/40', textClass: 'text-cyan-300',
+                  barFrom: 'from-cyan-500', barTo: 'to-blue-400',
+                  perks: ['20% discount on all events', 'VIP access + guest pass', 'Meet & greet with speakers', 'Exclusive Diamond merch', 'Free premium subscription month', 'Personal event concierge'],
+                },
+                {
+                  min: 50, max: Infinity, name: 'Platinum Master', icon: '👑',
+                  colorClass: 'from-purple-500/20 via-pink-500/10 to-primary/10', borderClass: 'border-purple-500/40', textClass: 'text-purple-300',
+                  barFrom: 'from-purple-500', barTo: 'to-pink-400',
+                  perks: ['Free Gold subscription forever', '30% discount on all events', 'Lifetime VIP status', 'Name on event wall of fame', 'Private networking sessions', 'Annual BlockTix gala invite', 'Founding member NFT certificate'],
+                },
+              ];
+
+              const currentLevelIdx = LEVELS.findIndex(l => badgeCount >= l.min && badgeCount <= l.max);
+              const currentLevel = LEVELS[currentLevelIdx >= 0 ? currentLevelIdx : 0];
+              const nextLevel = LEVELS[currentLevelIdx + 1];
+              const progressToNext = nextLevel
+                ? Math.min(((badgeCount - currentLevel.min) / (nextLevel.min - currentLevel.min)) * 100, 100)
+                : 100;
+              const attendedTickets = userTickets.filter((t: any) => t.used);
+              const earnedBadges = attendedTickets.filter((t: any) => t.badge_sent === true);
+
+              const downloadBadge = (ticket: any) => {
+                const LEVEL_PALETTE = [
+                  { min: 0, max: 4, icon: '🥉', name: 'Bronze Explorer', bgFrom: '#78350f', bgTo: '#92400e', accent: '#d97706' },
+                  { min: 5, max: 9, icon: '🥈', name: 'Silver Trailblazer', bgFrom: '#475569', bgTo: '#334155', accent: '#94a3b8' },
+                  { min: 10, max: 19, icon: '🥇', name: 'Gold Maverick', bgFrom: '#854d0e', bgTo: '#713f12', accent: '#eab308' },
+                  { min: 20, max: 49, icon: '💎', name: 'Diamond Legend', bgFrom: '#164e63', bgTo: '#1e3a5f', accent: '#22d3ee' },
+                  { min: 50, max: Infinity, icon: '👑', name: 'Platinum Master', bgFrom: '#581c87', bgTo: '#701a75', accent: '#a855f7' },
+                ];
+                const lvl = LEVEL_PALETTE.find(l => badgeCount >= l.min && badgeCount <= l.max) || LEVEL_PALETTE[0];
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 600;
+                canvas.height = 360;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+
+                // Background gradient
+                const grad = ctx.createLinearGradient(0, 0, 600, 360);
+                grad.addColorStop(0, lvl.bgFrom);
+                grad.addColorStop(1, lvl.bgTo);
+                const rr = (x: number, y: number, w: number, h: number, r: number) => {
+                  ctx.beginPath();
+                  ctx.moveTo(x + r, y);
+                  ctx.arcTo(x + w, y, x + w, y + h, r);
+                  ctx.arcTo(x + w, y + h, x, y + h, r);
+                  ctx.arcTo(x, y + h, x, y, r);
+                  ctx.arcTo(x, y, x + w, y, r);
+                  ctx.closePath();
+                };
+                rr(0, 0, 600, 360, 20);
+                ctx.fillStyle = grad;
+                ctx.fill();
+
+                // Border
+                ctx.strokeStyle = lvl.accent;
+                ctx.lineWidth = 3;
+                rr(2, 2, 596, 356, 18);
+                ctx.stroke();
+
+                // Top accent bar
+                ctx.fillStyle = lvl.accent;
+                rr(2, 2, 596, 6, 4);
+                ctx.fill();
+
+                // BlockTix brand
+                ctx.font = 'bold 13px Arial';
+                ctx.fillStyle = lvl.accent;
+                ctx.textAlign = 'right';
+                ctx.fillText('BlockTix', 580, 30);
+                ctx.font = '11px Arial';
+                ctx.fillStyle = '#94a3b8';
+                ctx.fillText('Blockchain Event Verification', 580, 46);
+
+                // Level icon (emoji)
+                ctx.font = '90px serif';
+                ctx.textAlign = 'left';
+                ctx.fillText(lvl.icon, 30, 165);
+
+                // Level name
+                ctx.font = 'bold 14px Arial';
+                ctx.fillStyle = lvl.accent;
+                ctx.textAlign = 'left';
+                ctx.fillText(lvl.name.toUpperCase(), 150, 82);
+
+                // Event name (large)
+                ctx.font = 'bold 26px Arial';
+                ctx.fillStyle = '#ffffff';
+                const eventName = ticket.event_name || 'Event';
+                ctx.fillText(eventName.length > 30 ? eventName.slice(0, 28) + '…' : eventName, 150, 118);
+
+                // Divider
+                ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(150, 132);
+                ctx.lineTo(570, 132);
+                ctx.stroke();
+
+                // Attendee label
+                ctx.font = '11px Arial';
+                ctx.fillStyle = '#94a3b8';
+                ctx.fillText('VERIFIED ATTENDEE', 150, 155);
+
+                // Attendee email
+                ctx.font = 'bold 17px Arial';
+                ctx.fillStyle = '#ffffff';
+                const email = ticket.recipient_email || '';
+                ctx.fillText(email.length > 36 ? email.slice(0, 34) + '…' : email, 150, 180);
+
+                // Date
+                if (ticket.event_date) {
+                  ctx.font = '14px Arial';
+                  ctx.fillStyle = '#94a3b8';
+                  const dateStr = new Date(ticket.event_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+                  ctx.fillText('📅  ' + dateStr, 150, 208);
+                }
+
+                // Ticket ID
+                ctx.font = '11px monospace';
+                ctx.fillStyle = '#64748b';
+                ctx.fillText('Ticket ID: ' + (ticket.ticket_id || ''), 30, 318);
+
+                // Verified check
+                ctx.font = 'bold 13px Arial';
+                ctx.fillStyle = '#22c55e';
+                ctx.textAlign = 'right';
+                ctx.fillText('✓ Organizer Verified', 570, 318);
+
+                // Bottom line
+                ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(20, 330);
+                ctx.lineTo(580, 330);
+                ctx.stroke();
+
+                // Date stamp
+                ctx.font = '11px Arial';
+                ctx.fillStyle = '#475569';
+                ctx.textAlign = 'center';
+                ctx.fillText('Generated on ' + new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), 300, 350);
+
+                canvas.toBlob((blob) => {
+                  if (!blob) return;
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `blocktix-badge-${(ticket.event_name || 'event').replace(/\s+/g, '-').toLowerCase()}.png`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }, 'image/png');
+              };
+
+              return (
+                <div className="space-y-8">
+                  <div>
+                    <h2 className="text-3xl font-bold text-white mb-1 flex items-center gap-3">
+                      <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
+                        <Star className="h-8 w-8 text-primary" />
+                      </div>
+                      My Badges
+                    </h2>
+                    <p className="text-muted-foreground">Earn badges by attending events — level up to unlock exclusive perks</p>
+                  </div>
+
+                  {/* Current Level Hero */}
+                  <div className={`bg-gradient-to-br ${currentLevel.colorClass} border-2 ${currentLevel.borderClass} rounded-2xl p-8 shadow-2xl`}>
+                    <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+                      <div className="text-8xl leading-none select-none">{currentLevel.icon}</div>
+                      <div className="flex-1 text-center sm:text-left">
+                        <p className="text-xs uppercase tracking-widest text-muted-foreground font-bold mb-1">Current Level</p>
+                        <h3 className={`text-3xl font-bold ${currentLevel.textClass} mb-2`}>{currentLevel.name}</h3>
+                        <div className="flex items-baseline justify-center sm:justify-start gap-2 mb-4">
+                          <span className="text-5xl font-bold text-white font-bitcount">{badgeCount}</span>
+                          <span className="text-muted-foreground text-base">badges earned</span>
+                        </div>
+                        {nextLevel ? (
+                          <div>
+                            <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
+                              <span>{currentLevel.name}</span>
+                              <span>{nextLevel.min - badgeCount} more to {nextLevel.name}</span>
+                            </div>
+                            <div className="w-full h-3 bg-black/30 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full bg-gradient-to-r ${currentLevel.barFrom} ${currentLevel.barTo} transition-all duration-700`}
+                                style={{ width: `${progressToNext}%` }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <p className={`font-bold ${currentLevel.textClass}`}>👑 Maximum Level Reached!</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-6 pt-6 border-t border-white/10">
+                      <p className="text-xs uppercase tracking-widest text-muted-foreground font-bold mb-3">Your Current Perks</p>
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        {currentLevel.perks.map((perk, i) => (
+                          <div key={i} className="flex items-center gap-2 text-sm">
+                            <CheckCircle className={`h-4 w-4 flex-shrink-0 ${currentLevel.textClass}`} />
+                            <span className="text-white/90">{perk}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Level Roadmap */}
+                  <div>
+                    <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5 text-primary" />
+                      Level Roadmap
+                    </h3>
+                    <div className="space-y-3">
+                      {LEVELS.map((level, idx) => {
+                        const isCurrent = level === currentLevel;
+                        const isUnlocked = badgeCount >= level.min;
+                        return (
+                          <div
+                            key={level.name}
+                            className={`rounded-xl border p-5 transition-all ${
+                              isCurrent
+                                ? `bg-gradient-to-r ${level.colorClass} ${level.borderClass} border-2 shadow-lg`
+                                : isUnlocked
+                                ? 'bg-card/60 border-border/50'
+                                : 'bg-card/20 border-border/20 opacity-50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-4">
+                              <span className="text-4xl">{isUnlocked ? level.icon : '🔒'}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap mb-1">
+                                  <span className={`font-bold text-lg ${isCurrent ? level.textClass : isUnlocked ? 'text-white' : 'text-muted-foreground'}`}>
+                                    {level.name}
+                                  </span>
+                                  {isCurrent && <Badge className="text-[10px] bg-white/10 border-current">Current</Badge>}
+                                  {isUnlocked && !isCurrent && <Badge className="text-[10px] bg-emerald-500/20 text-emerald-400 border-emerald-500/30">✓ Unlocked</Badge>}
+                                </div>
+                                <p className="text-xs text-muted-foreground mb-2">
+                                  {level.max === Infinity ? `${level.min}+ badges` : `${level.min}–${level.max} badges`}
+                                </p>
+                                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                  {level.perks.slice(0, 3).map((perk, pi) => (
+                                    <span key={pi} className={`text-xs flex items-center gap-1 ${!isUnlocked ? 'text-muted-foreground/40' : 'text-white/70'}`}>
+                                      {isUnlocked ? '✓' : '·'} {perk}
+                                    </span>
+                                  ))}
+                                  {level.perks.length > 3 && (
+                                    <span className="text-xs text-muted-foreground">+{level.perks.length - 3} more perks</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Badge Collection */}
+                  <div>
+                    <h3 className="text-xl font-bold text-white mb-1 flex items-center gap-2">
+                      <Trophy className="h-5 w-5 text-primary" />
+                      Badge Collection ({earnedBadges.length})
+                    </h3>
+                    <p className="text-muted-foreground text-sm mb-4">Badges are sent by organizers after they verify your ticket at the event</p>
+                    {earnedBadges.length === 0 ? (
+                      <Card className="bg-card/30 border-border border-dashed">
+                        <CardContent className="p-12 text-center">
+                          <Star className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
+                          <p className="text-muted-foreground text-lg font-medium">No badges yet</p>
+                          <p className="text-muted-foreground/60 text-sm mt-2">Attend an event — the organizer will send your badge after verifying your ticket at entry</p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                        {earnedBadges.map((ticket: any, idx: number) => (
+                          <div
+                            key={ticket.id}
+                            className={`bg-gradient-to-br ${currentLevel.colorClass} border ${currentLevel.borderClass} rounded-2xl p-5 flex flex-col gap-3 hover:scale-[1.02] transition-all duration-300`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <span className="text-4xl select-none">{currentLevel.icon}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className={`font-bold text-xs uppercase tracking-widest ${currentLevel.textClass}`}>{currentLevel.name}</p>
+                                <p className="text-white font-bold text-sm leading-tight line-clamp-2 mt-0.5">{ticket.event_name || 'Event'}</p>
+                              </div>
+                            </div>
+                            {ticket.event_date && (
+                              <p className="text-muted-foreground text-xs">
+                                📅 {new Date(ticket.event_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                              </p>
+                            )}
+                            <div className="flex items-center justify-between pt-1 border-t border-white/10">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full bg-black/20 ${currentLevel.textClass}`}>
+                                Badge #{idx + 1}
+                              </span>
+                              <button
+                                onClick={() => downloadBadge(ticket)}
+                                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-black/20 hover:bg-black/40 transition-colors ${currentLevel.textClass}`}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                  <polyline points="7 10 12 15 17 10"/>
+                                  <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                                Download
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Pending Approval Section */}
             {activeSidebarSection === 'pending' && (
               <div className="space-y-8">
@@ -1641,13 +2076,40 @@ export default function UserDashboard() {
                   <p className="text-xs font-bold text-gray-600 uppercase tracking-widest">Scan This Code</p>
                 </div>
                 <QRCodeDisplay
-                  data={`${typeof window !== 'undefined' && window.location.origin || 'http://localhost:5000'}/verify-ticket?eventId=${selectedTicket.event_id}&ticketId=${selectedTicket.ticket_id}`}
+                  data={(() => {
+                    // If stored qr_data is already a proper URL, use it as-is.
+                    // Adapts automatically: local IP when on LAN, real domain when deployed.
+                    if (selectedTicket.qr_data && selectedTicket.qr_data.startsWith('http')) {
+                      return selectedTicket.qr_data;
+                    }
+                    // Fallback: build a URL using the current origin + embedded payload.
+                    // Phone cameras open this as a browser link on any device.
+                    const payload = btoa(unescape(encodeURIComponent(JSON.stringify({
+                      n: selectedTicket.event_name,
+                      d: selectedTicket.event_date,
+                      l: selectedTicket.event_location,
+                      e: selectedTicket.recipient_email,
+                      h: selectedTicket.unique_hash,
+                    }))));
+                    return `${window.location.origin}/verify-ticket?eventId=${selectedTicket.event_id}&ticketId=${selectedTicket.ticket_id}&d=${encodeURIComponent(payload)}`;
+                  })()}
                   title=""
                   subtitle=""
                 />
                 <div className="mt-3 text-center">
                   <p className="text-xs text-gray-500 font-medium">Valid for Entry</p>
                 </div>
+              </div>
+
+              {/* Mobile scanning info */}
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                <p className="text-blue-400 text-xs font-bold uppercase tracking-wider mb-1">📱 Mobile Scanning</p>
+                <p className="text-blue-300/80 text-xs leading-relaxed">
+                  Show this QR to the organizer — they will scan it using the in-app scanner. Samsung and iPhone cameras will open it directly in the browser.
+                  {window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+                    ? ' For full mobile support, access the app via your PC\'s local IP (e.g. 192.168.x.x:5000) or deploy the project.'
+                    : ' Works on all devices.'}
+                </p>
               </div>
 
               {/* Ticket Details */}
@@ -1899,57 +2361,37 @@ export default function UserDashboard() {
                   variant="solid"
                   disabled={userSubscription !== 'free'}
                   onClick={async () => {
+                    // ── TEST MODE ──
+                    if (testMode || localStorage.getItem('testMode') === 'true') {
+                      setUserSubscription('premium');
+                      toast({ title: '🧪 Premium Activated (Test Mode)!', description: 'No payment charged.' });
+                      setSubscriptionDialogOpen(false);
+                      return;
+                    }
                     try {
                       if (!window.ethereum) {
-                        toast({
-                          title: "Wallet Not Found",
-                          description: "Please install MetaMask to subscribe.",
-                          variant: "destructive"
-                        });
+                        toast({ title: 'Wallet Not Found', description: 'Please install MetaMask to subscribe.', variant: 'destructive' });
                         return;
                       }
-                      
-                      const premiumFee = "0.0032"; // ~₹799
+                      const premiumFee = '0.0032';
                       const provider = new ethers.BrowserProvider(window.ethereum);
                       const signer = await provider.getSigner();
-                      const organizerAddress = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb";
-                      
-                      toast({
-                        title: "Processing Payment...",
-                        description: `Sending ${premiumFee} ETH (₹799) for Premium subscription...`
-                      });
-                      
-                      const tx = await signer.sendTransaction({
-                        to: organizerAddress,
-                        value: ethers.parseEther(premiumFee)
-                      });
-                      
-                      toast({
-                        title: "Payment Pending...",
-                        description: "Waiting for transaction confirmation..."
-                      });
-                      
+                      const organizerAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
+                      toast({ title: 'Processing Payment...', description: `Sending ${premiumFee} ETH (₹799) for Premium subscription...` });
+                      const tx = await signer.sendTransaction({ to: organizerAddress, value: ethers.parseEther(premiumFee) });
+                      toast({ title: 'Payment Pending...', description: 'Waiting for transaction confirmation...' });
                       await tx.wait();
-                      
                       setUserSubscription('premium');
-                      toast({
-                        title: "Welcome to Premium! 👑",
-                        description: "Payment confirmed! You now have access to exclusive Premium benefits!"
-                      });
+                      toast({ title: 'Welcome to Premium! 👑', description: 'Payment confirmed! You now have access to exclusive Premium benefits!' });
                       setSubscriptionDialogOpen(false);
                     } catch (error: any) {
-                      console.error('Payment error:', error);
-                      toast({
-                        title: "Payment Failed",
-                        description: error.reason || error.message || "Failed to process payment",
-                        variant: "destructive"
-                      });
+                      toast({ title: 'Payment Failed', description: error.reason || error.message || 'Failed to process payment', variant: 'destructive' });
                     }
                   }}
                   className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <Wallet className="h-4 w-4" />
-                  {userSubscription === 'premium' ? 'Current Plan' : 'Pay 0.0032 ETH (₹799)'}
+                  {userSubscription === 'premium' ? 'Current Plan' : testMode ? '🧪 Activate Free (Test)' : 'Pay 0.0032 ETH (₹799)'}
                 </Button>
                 {userSubscription === 'premium' && (
                   <Button
@@ -2007,57 +2449,37 @@ export default function UserDashboard() {
                   variant="solid"
                   disabled={userSubscription === 'gold'}
                   onClick={async () => {
+                    // ── TEST MODE ──
+                    if (testMode || localStorage.getItem('testMode') === 'true') {
+                      setUserSubscription('gold');
+                      toast({ title: '🧪 Gold Activated (Test Mode)!', description: 'No payment charged.' });
+                      setSubscriptionDialogOpen(false);
+                      return;
+                    }
                     try {
                       if (!window.ethereum) {
-                        toast({
-                          title: "Wallet Not Found",
-                          description: "Please install MetaMask to subscribe.",
-                          variant: "destructive"
-                        });
+                        toast({ title: 'Wallet Not Found', description: 'Please install MetaMask to subscribe.', variant: 'destructive' });
                         return;
                       }
-                      
-                      const goldFee = "0.006"; // ~₹1499
+                      const goldFee = '0.006';
                       const provider = new ethers.BrowserProvider(window.ethereum);
                       const signer = await provider.getSigner();
-                      const organizerAddress = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb";
-                      
-                      toast({
-                        title: "Processing Payment...",
-                        description: `Sending ${goldFee} ETH (₹1,499) for Gold subscription...`
-                      });
-                      
-                      const tx = await signer.sendTransaction({
-                        to: organizerAddress,
-                        value: ethers.parseEther(goldFee)
-                      });
-                      
-                      toast({
-                        title: "Payment Pending...",
-                        description: "Waiting for transaction confirmation..."
-                      });
-                      
+                      const organizerAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
+                      toast({ title: 'Processing Payment...', description: `Sending ${goldFee} ETH (₹1,499) for Gold subscription...` });
+                      const tx = await signer.sendTransaction({ to: organizerAddress, value: ethers.parseEther(goldFee) });
+                      toast({ title: 'Payment Pending...', description: 'Waiting for transaction confirmation...' });
                       await tx.wait();
-                      
                       setUserSubscription('gold');
-                      toast({
-                        title: "Welcome to Gold! ⚡",
-                        description: "Payment confirmed! You now have access to all premium features and exclusive Gold benefits!"
-                      });
+                      toast({ title: 'Welcome to Gold! ⚡', description: 'Payment confirmed! You now have access to all premium features and exclusive Gold benefits!' });
                       setSubscriptionDialogOpen(false);
                     } catch (error: any) {
-                      console.error('Payment error:', error);
-                      toast({
-                        title: "Payment Failed",
-                        description: error.reason || error.message || "Failed to process payment",
-                        variant: "destructive"
-                      });
+                      toast({ title: 'Payment Failed', description: error.reason || error.message || 'Failed to process payment', variant: 'destructive' });
                     }
                   }}
                   className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <Wallet className="h-4 w-4" />
-                  {userSubscription === 'gold' ? 'Current Plan' : 'Pay 0.006 ETH (₹1,499)'}
+                  {userSubscription === 'gold' ? 'Current Plan' : testMode ? '🧪 Activate Free (Test)' : 'Pay 0.006 ETH (₹1,499)'}
                 </Button>
                 {userSubscription === 'gold' && (
                   <Button
@@ -2083,14 +2505,20 @@ export default function UserDashboard() {
 
       {/* Ad Request Dialog */}
       <Dialog open={adRequestDialogOpen} onOpenChange={setAdRequestDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col gap-0 p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
             <DialogTitle className="text-2xl font-bold flex items-center gap-2">
               <Megaphone className="h-6 w-6 text-amber-400" />
               Request Ad Space
             </DialogTitle>
+            {testMode && (
+              <div className="flex items-center gap-1.5 mt-1 text-xs text-amber-400 font-bold">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                Test Mode — payment bypassed
+              </div>
+            )}
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4 px-6 overflow-y-auto flex-1">
             <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
               <p className="text-sm text-amber-400 font-medium mb-2">📢 Reach Thousands of Event-Goers!</p>
               <p className="text-xs text-muted-foreground">
@@ -2218,7 +2646,9 @@ export default function UserDashboard() {
               </p>
             </div>
 
-            <div className="flex gap-3">
+          </div>{/* end scrollable area */}
+
+          <div className="flex gap-3 px-6 pt-3 pb-6 border-t border-border shrink-0">
               <Button
                 variant="ghost"
                 onClick={() => setAdRequestDialogOpen(false)}
@@ -2229,46 +2659,10 @@ export default function UserDashboard() {
               <Button
                 variant="solid"
                 onClick={async () => {
-                  try {
-                    // Ad request fee: 0.001 ETH (~₹250)
-                    const adFee = "0.001";
-                    
-                    if (!window.ethereum) {
-                      toast({
-                        title: "Wallet Not Found",
-                        description: "Please install MetaMask to submit ad requests.",
-                        variant: "destructive"
-                      });
-                      return;
-                    }
-                    
-                    const provider = new ethers.BrowserProvider(window.ethereum);
-                    const signer = await provider.getSigner();
-                    
-                    // Send payment to organizer (you can set a specific organizer address)
-                    const organizerAddress = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"; // Demo organizer
-                    
-                    toast({
-                      title: "Processing Payment...",
-                      description: `Sending ${adFee} ETH (₹250) for ad request...`
-                    });
-                    
-                    const tx = await signer.sendTransaction({
-                      to: organizerAddress,
-                      value: ethers.parseEther(adFee)
-                    });
-                    
-                    toast({
-                      title: "Payment Pending...",
-                      description: "Waiting for transaction confirmation..."
-                    });
-                    
-                    await tx.wait();
-                    
-                    // Save ad request to localStorage
+                  const saveRequest = (txHash?: string) => {
                     try {
                       const existingRequests = JSON.parse(localStorage.getItem('adRequests') || '[]');
-                      const newRequest = {
+                      existingRequests.push({
                         id: Date.now(),
                         business_name: adRequestForm.businessName,
                         ad_type: adRequestForm.adType,
@@ -2277,44 +2671,50 @@ export default function UserDashboard() {
                         image_url: adRequestForm.imagePreview,
                         requested_at: new Date().toISOString(),
                         status: 'pending',
-                        payment_tx: tx.hash
-                      };
-                      existingRequests.push(newRequest);
+                        payment_tx: txHash || 'test-mode'
+                      });
                       localStorage.setItem('adRequests', JSON.stringify(existingRequests));
-                    } catch (error) {
-                      console.error('Error saving ad request:', error);
-                    }
-                    
-                    toast({
-                      title: "Ad Request Submitted! 🎉",
-                      description: "Payment confirmed! An organizer will review your request soon."
-                    });
+                    } catch (e) { console.error('Error saving ad request:', e); }
+                  };
+
+                  // ── TEST MODE: skip payment ──
+                  if (testMode) {
+                    saveRequest();
+                    toast({ title: '🧪 Ad Request Submitted (Test Mode)!', description: 'No payment charged — test mode active.' });
                     setAdRequestDialogOpen(false);
-                    setAdRequestForm({ 
-                      description: '', 
-                      adType: 'banner', 
-                      contactEmail: '', 
-                      businessName: '',
-                      imageFile: null,
-                      imagePreview: ''
-                    });
+                    setAdRequestForm({ description: '', adType: 'banner', contactEmail: '', businessName: '', imageFile: null, imagePreview: '' });
+                    return;
+                  }
+
+                  // ── REAL payment flow ──
+                  try {
+                    const adFee = '0.001';
+                    if (!window.ethereum) {
+                      toast({ title: 'Wallet Not Found', description: 'Please install MetaMask to submit ad requests.', variant: 'destructive' });
+                      return;
+                    }
+                    const provider = new ethers.BrowserProvider(window.ethereum);
+                    const signer = await provider.getSigner();
+                    const organizerAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
+                    toast({ title: 'Processing Payment...', description: `Sending ${adFee} ETH (₹250) for ad request...` });
+                    const tx = await signer.sendTransaction({ to: organizerAddress, value: ethers.parseEther(adFee) });
+                    toast({ title: 'Payment Pending...', description: 'Waiting for transaction confirmation...' });
+                    await tx.wait();
+                    saveRequest(tx.hash);
+                    toast({ title: 'Ad Request Submitted! 🎉', description: 'Payment confirmed! An organizer will review your request soon.' });
+                    setAdRequestDialogOpen(false);
+                    setAdRequestForm({ description: '', adType: 'banner', contactEmail: '', businessName: '', imageFile: null, imagePreview: '' });
                   } catch (error: any) {
-                    console.error('Payment error:', error);
-                    toast({
-                      title: "Payment Failed",
-                      description: error.reason || error.message || "Failed to process payment",
-                      variant: "destructive"
-                    });
+                    toast({ title: 'Payment Failed', description: error.reason || error.message || 'Failed to process payment', variant: 'destructive' });
                   }
                 }}
-                disabled={!adRequestForm.description || !adRequestForm.contactEmail || !adRequestForm.businessName || !adRequestForm.imagePreview}
-                className="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
+                disabled={!adRequestForm.description || !adRequestForm.contactEmail || !adRequestForm.businessName}
+                className="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 inline-flex items-center justify-center gap-2"
               >
-                <Wallet className="h-4 w-4 mr-2" />
-                Pay ₹250 & Submit
+                <Wallet className="h-4 w-4 shrink-0" />
+                <span>{testMode ? '🧪 Submit Free (Test)' : 'Pay ₹250 & Submit'}</span>
               </Button>
             </div>
-          </div>
         </DialogContent>
       </Dialog>
 

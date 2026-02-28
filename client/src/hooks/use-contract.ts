@@ -135,17 +135,10 @@ export function useContract() {
 
       return result;
     } catch (error: any) {
-      setTransactionStatus({
-        status: 'error',
-        error: error.message
-      });
-
-      toast({
-        title: "Verification Failed",
-        description: error.message,
-        variant: "destructive"
-      });
-
+      // Don't toast here — the caller (handleVerifyTicket) will fall back to
+      // Supabase DB and show its own result toast.
+      setTransactionStatus({ status: 'idle' });
+      console.warn('Blockchain verifyTicket failed (will try DB fallback):', error.message);
       return null;
     }
   }, [toast]);
@@ -154,34 +147,16 @@ export function useContract() {
     eventId: string,
     ticketId: string
   ): Promise<boolean> => {
-    setTransactionStatus({ status: 'pending' });
-    
+    // DB update is already done by the caller before this fires.
+    // Silently attempt the blockchain write — fails gracefully if no wallet / mobile.
     try {
       await contractService.markTicketUsed(eventId, ticketId);
-      
-      setTransactionStatus({ status: 'success' });
-
-      toast({
-        title: "Ticket Marked as Used",
-        description: "Ticket has been successfully marked as used"
-      });
-
-      return true;
+      console.log('✅ Blockchain markTicketUsed succeeded');
     } catch (error: any) {
-      setTransactionStatus({
-        status: 'error',
-        error: error.message
-      });
-
-      toast({
-        title: "Update Failed",
-        description: error.message,
-        variant: "destructive"
-      });
-
-      return false;
+      console.warn('Blockchain markTicketUsed skipped (no wallet or mobile):', error.message);
     }
-  }, [toast]);
+    return true;
+  }, []);
 
   const getEvent = useCallback(async (eventId: string): Promise<EventType | null> => {
     try {

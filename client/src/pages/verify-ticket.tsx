@@ -87,17 +87,18 @@ export default function VerifyTicket() {
   const [eventId, setEventId] = useState<string | null>(null);
   const [ticketId, setTicketId] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<any>(null);
+  const [isDbVerified, setIsDbVerified] = useState(false); // true = database fallback, not blockchain
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const eid = params.get('eventId');
     const tid = params.get('ticketId');
+    const d = params.get('d'); // base64 embedded ticket data
 
     if (eid && tid) {
       setEventId(eid);
       setTicketId(tid);
-      // Load preview data from Supabase
-      loadPreviewData(eid, tid);
+      loadPreviewData(eid, tid, d);
     } else {
       setError('Invalid QR code — missing event or ticket information');
       setShowPreview(false);
@@ -105,30 +106,61 @@ export default function VerifyTicket() {
     }
   }, []);
 
-  const loadPreviewData = async (eid: string, tid: string) => {
+  const loadPreviewData = async (eid: string, tid: string, d?: string | null) => {
+    // 1. Try the embedded base64 payload from the QR URL — works completely offline/mobile
+    if (d) {
+      try {
+        const json = decodeURIComponent(escape(atob(decodeURIComponent(d))));
+        const decoded = JSON.parse(json);
+        setPreviewData({
+          event: {
+            id: Number(eid),
+            name: decoded.n || decoded.name || 'Event',
+            date: decoded.d || decoded.date || '',
+            location: decoded.l || decoded.location || '',
+            description: decoded.desc || '',
+          },
+          ticket: {
+            recipient_email: decoded.e || decoded.email || '',
+            unique_hash: decoded.h || decoded.hash || '',
+            ticket_id: tid,
+          }
+        });
+        return; // No Supabase call needed — data came from the QR itself
+      } catch (decodeErr) {
+        console.warn('Could not decode QR payload, falling back to Supabase:', decodeErr);
+      }
+    }
+
+    // 2. Fallback: Supabase lookup (when d param is missing or malformed)
     try {
-      // Fetch event and ticket details from Supabase for preview
       const { data: eventRecord } = await supabase
         .from('events')
         .select('*')
-        .eq('id', eid)
-        .single();
+        .eq('id', Number(eid))
+        .maybeSingle();
 
       const { data: ticketRecord } = await supabase
         .from('ticket_emails')
         .select('*')
-        .eq('event_id', eid)
+        .eq('event_id', Number(eid))
         .eq('ticket_id', tid)
-        .single();
+        .maybeSingle();
 
       if (eventRecord) {
         setPreviewData({
           event: eventRecord,
           ticket: ticketRecord
         });
+      } else if (ticketRecord) {
+        // Event not in DB but ticket exists — show minimal data
+        setPreviewData({
+          event: { id: Number(eid), name: 'Event #' + eid, date: '', location: '', description: '' },
+          ticket: ticketRecord
+        });
       }
     } catch (err) {
-      console.warn('Could not load preview data:', err);
+      console.warn('Could not load preview data from Supabase:', err);
     }
   };
 
@@ -154,6 +186,39 @@ export default function VerifyTicket() {
       // Step 3 — Verifying ticket
       setVerifyStep('verifying');
       const verification = await contractService.verifyTicket(eventId, ticketId);
+
+      // If blockchain says invalid, try Supabase fallback before giving up
+      if (!verification.valid) {
+        try {
+          const { data: dbTicket } = await supabase
+            .from('ticket_emails')
+            .select('*')
+            .eq('ticket_id', ticketId)
+            .maybeSingle();
+
+          if (dbTicket) {
+            // Found in database — treat as valid (database-verified)
+            setIsDbVerified(true);
+            setTicketData({ valid: true, owner: dbTicket.unique_hash || 'N/A', attendeeName: dbTicket.recipient_email || 'Verified Attendee', isUsed: dbTicket.status === 'used' });
+            setRecipientEmail(dbTicket.recipient_email || null);
+
+            // Try to load event details from Supabase too
+            try {
+              const { data: evtRecord } = await supabase.from('events').select('*').eq('id', Number(eventId)).maybeSingle();
+              if (evtRecord) setEventData({ name: evtRecord.name, date: evtRecord.date, location: evtRecord.location, description: evtRecord.description });
+            } catch { /* ignore */ }
+
+            setVerifyStep('done');
+            await delay(300);
+            setLoading(false);
+            setTimeout(() => setShowResult(true), 100);
+            return;
+          }
+        } catch (dbFallbackErr) {
+          console.warn('Supabase fallback also failed:', dbFallbackErr);
+        }
+      }
+
       setTicketData(verification);
 
       // Get event details from blockchain too
@@ -161,7 +226,11 @@ export default function VerifyTicket() {
         const event = await contractService.getEvent(eventId);
         setEventData(event);
       } catch (evtErr) {
-        console.warn('Could not load event details from blockchain:', evtErr);
+        // Fallback: try Supabase for event details
+        try {
+          const { data: evtRecord } = await supabase.from('events').select('*').eq('id', Number(eventId)).maybeSingle();
+          if (evtRecord) setEventData({ name: evtRecord.name, date: evtRecord.date, location: evtRecord.location, description: evtRecord.description });
+        } catch { /* ignore */ }
       }
 
       // Resolve the actual email from Supabase using ticketId (email is NOT on blockchain)
@@ -170,7 +239,7 @@ export default function VerifyTicket() {
           .from('ticket_emails')
           .select('recipient_email')
           .eq('ticket_id', ticketId)
-          .single();
+          .maybeSingle();
         if (ticketRecord?.recipient_email) {
           setRecipientEmail(ticketRecord.recipient_email);
         }
@@ -195,6 +264,21 @@ export default function VerifyTicket() {
   const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
   // --- Preview state - show event details before verification ---
+  // Show a brief spinner while previewData is being loaded
+  if (showPreview && !previewData && !loading) {
+    return (
+      <>
+        <style>{animationStyles}</style>
+        <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-2 border-emerald-400 border-t-transparent mx-auto mb-4" />
+            <p className="text-slate-400 text-sm">Loading ticket details…</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   if (showPreview && previewData) {
     return (
       <>
@@ -243,12 +327,14 @@ export default function VerifyTicket() {
                         <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Date</p>
                       </div>
                       <p className="text-white font-semibold text-lg">
-                        {new Date(previewData.event.date).toLocaleDateString('en-US', {
-                          weekday: 'long',
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}
+                        {previewData.event.date
+                          ? new Date(previewData.event.date).toLocaleDateString('en-US', {
+                              weekday: 'long',
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric'
+                            })
+                          : 'Date TBA'}
                       </p>
                     </div>
 
@@ -260,11 +346,13 @@ export default function VerifyTicket() {
                         <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Time</p>
                       </div>
                       <p className="text-white font-semibold text-lg">
-                        {new Date(previewData.event.date).toLocaleTimeString('en-US', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: true
-                        })}
+                        {previewData.event.date
+                          ? new Date(previewData.event.date).toLocaleTimeString('en-US', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true
+                            })
+                          : 'Time TBA'}
                       </p>
                     </div>
 
@@ -303,27 +391,18 @@ export default function VerifyTicket() {
                     </div>
                   )}
 
-                  {/* Verification Notice */}
+                  {/* Attendee instruction — verification is organizer-side only */}
                   <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 mt-4">
                     <div className="flex items-start gap-3">
                       <Shield className="w-5 h-5 text-emerald-400 mt-0.5 flex-shrink-0" />
                       <div>
-                        <p className="text-emerald-400 font-semibold text-sm mb-1">Blockchain Verification Required</p>
+                        <p className="text-emerald-400 font-semibold text-sm mb-1">Your Ticket is Ready ✅</p>
                         <p className="text-slate-400 text-xs leading-relaxed">
-                          Click the button below to verify this ticket's authenticity on the Ethereum blockchain. This ensures the ticket is legitimate and has not been forged.
+                          Show this page or your QR code to the event organizer or staff at the venue. They will scan and verify it on their device. No action needed from you.
                         </p>
                       </div>
                     </div>
                   </div>
-
-                  {/* Verify Button */}
-                  <Button
-                    onClick={handleVerifyClick}
-                    className="w-full bg-gradient-to-r from-emerald-600 to-purple-600 hover:from-emerald-700 hover:to-purple-700 text-white py-6 text-lg font-bold shadow-xl shadow-emerald-500/20"
-                  >
-                    <Shield className="w-5 h-5 mr-2" />
-                    Verify Ticket on Blockchain
-                  </Button>
 
                   <div className="text-center">
                     <Button
@@ -488,7 +567,15 @@ export default function VerifyTicket() {
                       </div>
 
                       <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Ticket Verified</h2>
-                      <p className="shimmer-text text-lg font-semibold">Authenticated on Ethereum Blockchain</p>
+                      <p className="shimmer-text text-lg font-semibold">
+                        {isDbVerified ? 'Verified via Database Record' : 'Authenticated on Ethereum Blockchain'}
+                      </p>
+                      {isDbVerified && (
+                        <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 rounded-lg border border-blue-500/30">
+                          <Shield className="w-3.5 h-3.5 text-blue-400" />
+                          <span className="text-blue-300 text-xs font-medium">Database Verified — ticket record found in system</span>
+                        </div>
+                      )}
 
                       {ticketData.isUsed && (
                         <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-yellow-500/15 rounded-lg border border-yellow-500/40">

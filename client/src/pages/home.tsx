@@ -50,7 +50,8 @@ import {
   Save,
   X,
   BarChart3,
-  LayoutDashboard
+  LayoutDashboard,
+  Star
 } from 'lucide-react';
 
 export default function Home() {
@@ -69,8 +70,6 @@ export default function Home() {
     resetTransactionStatus,
     createEvent,
     mintTicket,
-    verifyTicket,
-    markTicketUsed,
     getEvent,
     contractAddress
   } = useContract();
@@ -119,6 +118,7 @@ export default function Home() {
     isUsed: boolean;
     event?: EventType;
   } | null>(null);
+  const [badgeSent, setBadgeSent] = useState(false);
 
   // QR Scanner state
   const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
@@ -144,6 +144,40 @@ export default function Home() {
   const [profileForm, setProfileForm] = useState({ username: '', email: '', organization: '' });
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [tempProfileForm, setTempProfileForm] = useState({ username: '', email: '', organization: '' });
+
+  // Volunteer management — emails that can verify tickets for a given event
+  const [volunteers, setVolunteers] = useState<string[]>([]);
+  const [volunteerInput, setVolunteerInput] = useState('');
+
+  const loadVolunteers = (eventId: string) => {
+    try {
+      const stored = localStorage.getItem(`volunteers_${eventId}`);
+      setVolunteers(stored ? JSON.parse(stored) : []);
+    } catch { setVolunteers([]); }
+  };
+
+  const saveVolunteers = (eventId: string, list: string[]) => {
+    localStorage.setItem(`volunteers_${eventId}`, JSON.stringify(list));
+    setVolunteers(list);
+  };
+
+  const addVolunteer = () => {
+    const email = volunteerInput.trim().toLowerCase();
+    if (!email || !email.includes('@')) return;
+    if (!verifyForm.eventId) {
+      toast({ title: 'Enter Event ID first', description: 'Type the event ID above before adding volunteers.', variant: 'destructive' });
+      return;
+    }
+    const updated = volunteers.includes(email) ? volunteers : [...volunteers, email];
+    saveVolunteers(verifyForm.eventId, updated);
+    setVolunteerInput('');
+    toast({ title: 'Volunteer added ✅', description: `${email} can now verify tickets for event ${verifyForm.eventId}.` });
+  };
+
+  const removeVolunteer = (email: string) => {
+    const updated = volunteers.filter(v => v !== email);
+    saveVolunteers(verifyForm.eventId, updated);
+  };
 
   // Initialize profile form
   useEffect(() => {
@@ -327,8 +361,17 @@ export default function Home() {
         ticketPrice
       );
 
-      // Build QR data as a verification URL
-      const verifyUrl = `${window.location.origin}/verify-ticket?eventId=${request.event_id}&ticketId=${mintResult.ticketId}`;
+      // Build QR as a real URL so phone cameras open it directly in the browser.
+      // window.location.origin auto-adapts: localhost during dev, real domain when deployed,
+      // or local IP (e.g. 192.168.x.x:5000) when accessed via network IP.
+      const approvalQrPayload = btoa(unescape(encodeURIComponent(JSON.stringify({
+        n: request.event_name || 'Event',
+        d: '',
+        l: '',
+        e: request.requester_email,
+        h: mintResult.transactionHash,
+      }))));
+      const verifyUrl = `${window.location.origin}/verify-ticket?eventId=${request.event_id}&ticketId=${mintResult.ticketId}&d=${encodeURIComponent(approvalQrPayload)}`;
 
       // Create ticket for the user in Supabase
       const { error: ticketError } = await supabase
@@ -629,10 +672,14 @@ export default function Home() {
       setActiveTab('generate');
 
       // Sync event to Supabase for user dashboard
+      // IMPORTANT: Use blockchain event ID as Supabase ID so ticket_emails.event_id matches
       try {
-        const { error } = await supabase
+        const blockchainId = parseInt(result.eventId);
+        // Try insert with explicit blockchain ID first
+        const { error: insertErr } = await supabase
           .from('events')
           .insert({
+            id: blockchainId,
             name: eventForm.name,
             description: eventForm.description,
             date: eventForm.date.toISOString(),
@@ -645,12 +692,25 @@ export default function Home() {
             is_public: eventForm.isPublic
           });
 
-        if (error) {
-          console.log('Note: Event sync skipped (database schema may need update)');
-        } else {
-          // Immediately refresh stats after event creation
-          fetchOrgStats();
+        if (insertErr) {
+          // If explicit ID fails (e.g. conflict), fall back to auto-increment
+          const { error: fallbackErr } = await supabase
+            .from('events')
+            .insert({
+              name: eventForm.name,
+              description: eventForm.description,
+              date: eventForm.date.toISOString(),
+              location: eventForm.location || 'Location TBA',
+              total_tickets: parseInt(eventForm.maxTickets),
+              available_tickets: parseInt(eventForm.maxTickets),
+              price: eventForm.ticketPrice,
+              organizer_address: walletState.address,
+              transaction_hash: result.transactionHash,
+              is_public: eventForm.isPublic
+            });
+          if (fallbackErr) console.log('Note: Event sync skipped:', fallbackErr.message);
         }
+        fetchOrgStats();
       } catch (err) {
         console.log('Note: Event sync skipped');
       }
@@ -704,8 +764,19 @@ export default function Home() {
             eventForTicket?.ticketPrice
           );
 
-          // Build QR data as a verification URL
-          const verifyUrl = `${window.location.origin}/verify-ticket?eventId=${ticketForm.eventId}&ticketId=${mintResult.ticketId}`;
+          // Build QR as a real URL so phone cameras open it directly in the browser.
+          // window.location.origin auto-adapts: localhost during dev, real domain when deployed,
+          // or local IP (e.g. 192.168.x.x:5000) when accessed via network IP.
+          const _ce = createdEvent as any;
+          const _ef = eventForTicket as any;
+          const qrPayload = btoa(unescape(encodeURIComponent(JSON.stringify({
+            n: _ce?.name || _ef?.name || 'Event',
+            d: _ce?.date || (_ef?.date ? new Date(_ef.date).toISOString() : ''),
+            l: _ce?.location || _ef?.location || '',
+            e: email,
+            h: mintResult.transactionHash,
+          }))));
+          const verifyUrl = `${window.location.origin}/verify-ticket?eventId=${ticketForm.eventId}&ticketId=${mintResult.ticketId}&d=${encodeURIComponent(qrPayload)}`;
 
           // Sync to Supabase for user dashboard
           try {
@@ -778,24 +849,121 @@ export default function Home() {
   const handleVerifyTicket = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const result = await verifyTicket(verifyForm.eventId, verifyForm.ticketId);
+    // Access control: allow organizer wallet OR a volunteer email they added
+    if (verifyForm.eventId) {
+      try {
+        const { data: eventRecord } = await supabase
+          .from('events')
+          .select('organizer_address')
+          .eq('id', parseInt(verifyForm.eventId))
+          .maybeSingle();
 
-    if (result) {
-      // Don't try to load event details to avoid the contract mismatch error
-      setVerificationResult({
-        ...result,
-        event: undefined // Skip event details for now
-      });
-      // Refresh stats after verification
-      fetchOrgStats();
+        if (eventRecord && eventRecord.organizer_address) {
+          const isOrganizer = eventRecord.organizer_address.toLowerCase() === walletState.address?.toLowerCase();
+          const storedVolunteers: string[] = (() => {
+            try { return JSON.parse(localStorage.getItem(`volunteers_${verifyForm.eventId}`) || '[]'); } catch { return []; }
+          })();
+          const isVolunteer = user?.email && storedVolunteers.includes(user.email.toLowerCase());
+
+          if (!isOrganizer && !isVolunteer) {
+            toast({
+              title: 'Access Denied 🔒',
+              description: 'Only the event organizer or an authorized volunteer can verify tickets for this event.',
+              variant: 'destructive',
+            });
+            return;
+          }
+        }
+      } catch {
+        // DB lookup failed — proceed (handles newly created events)
+      }
     }
+
+    // Verify against Supabase DB (instant, no blockchain tx needed — verifyTicket is view-only
+    // but RPC is slow/unreliable; DB is the source of truth for tickets minted through this app)
+    try {
+      const { data: ticketRecord, error: dbErr } = await supabase
+        .from('ticket_emails')
+        .select('*')
+        .eq('ticket_id', verifyForm.ticketId)
+        .eq('event_id', parseInt(verifyForm.eventId))
+        .maybeSingle();
+
+      if (dbErr) throw dbErr;
+
+      if (ticketRecord) {
+        const isUsed = ticketRecord.status === 'used';
+        const result = {
+          valid: true,
+          owner: ticketRecord.recipient_email || '',
+          attendeeName: ticketRecord.recipient_email || 'Ticket Holder',
+          isUsed,
+        };
+        setBadgeSent(ticketRecord.badge_sent === true);
+        setVerificationResult({ ...result, event: undefined });
+        toast({
+          title: isUsed ? 'Ticket Already Used ⚠️' : 'Ticket Valid ✅',
+          description: isUsed
+            ? `This ticket for ${result.attendeeName} has already been used for entry.`
+            : `Verified for ${result.attendeeName}`,
+          variant: isUsed ? 'destructive' : 'default',
+        });
+      } else {
+        setVerificationResult({ valid: false, owner: '', attendeeName: '', isUsed: false, event: undefined });
+        toast({
+          title: 'Invalid Ticket ❌',
+          description: 'This ticket ID was not found for this event.',
+          variant: 'destructive',
+        });
+      }
+    } catch (err) {
+      console.error('Verification DB error:', err);
+      toast({
+        title: 'Verification Error',
+        description: 'Could not reach the database. Please try again.',
+        variant: 'destructive',
+      });
+    }
+
+    fetchOrgStats();
   };
 
-  // Handle QR scan
+  // Handle QR scan — supports URL format and legacy event: format
   const handleQRScan = (data: string) => {
     try {
-      // Parse QR code data
-      // Format: "event:12345" or "event:12345:ticket:67890:wallet:0x789ABC"
+      // NEW FORMAT: compact JSON — {"v":1,"eid":"1","tid":"2","n":"Event",...}
+      // This is server-independent, works from any device without IP address config.
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.eid) {
+          if (qrScanType === 'event') {
+            setTicketForm(prev => ({ ...prev, eventId: String(parsed.eid) }));
+          } else if (qrScanType === 'verify') {
+            setVerifyForm(prev => ({ ...prev, eventId: String(parsed.eid), ticketId: String(parsed.tid || '') }));
+          }
+          setIsQRScannerOpen(false);
+          toast({ title: 'QR Scanned ✅', description: `Event: ${parsed.n || parsed.eid}` });
+          return;
+        }
+      } catch { /* not JSON — fall through to URL / legacy formats */ }
+
+      // LEGACY: verify-ticket URL (e.g. http://localhost:5000/verify-ticket?eventId=1&ticketId=2)
+      if (data.includes('verify-ticket')) {
+        const qs = data.includes('?') ? data.split('?')[1] : '';
+        const qp = new URLSearchParams(qs);
+        const eid = qp.get('eventId');
+        const tid = qp.get('ticketId');
+        if (eid && qrScanType === 'event') {
+          setTicketForm(prev => ({ ...prev, eventId: eid }));
+        } else if (eid && tid && qrScanType === 'verify') {
+          setVerifyForm(prev => ({ ...prev, eventId: eid, ticketId: tid }));
+        }
+        setIsQRScannerOpen(false);
+        toast({ title: 'QR Code Scanned', description: 'Form filled from ticket QR code.' });
+        return;
+      }
+
+      // Legacy format: "event:12345" or "event:12345:ticket:67890:wallet:0xABC"
       if (data.startsWith('event:')) {
         const parts = data.split(':');
         if (qrScanType === 'event') {
@@ -808,33 +976,31 @@ export default function Home() {
             walletAddress: parts[5] || ''
           }));
         }
+        setIsQRScannerOpen(false);
+        toast({ title: 'QR Code Scanned', description: 'Data has been filled in the form.' });
+        return;
       }
-      setIsQRScannerOpen(false);
-      toast({
-        title: "QR Code Scanned",
-        description: "Data has been filled in the form."
-      });
+
+      toast({ title: 'Unrecognised QR Code', description: 'Please scan a BlockTix ticket QR code.', variant: 'destructive' });
     } catch (error) {
-      toast({
-        title: "Invalid QR Code",
-        description: "Could not parse QR code data.",
-        variant: "destructive"
-      });
+      toast({ title: 'Invalid QR Code', description: 'Could not parse QR code data.', variant: 'destructive' });
     }
   };
+
+  // Load volunteers when verify event ID changes
+  useEffect(() => {
+    if (verifyForm.eventId) loadVolunteers(verifyForm.eventId);
+    else setVolunteers([]);
+  }, [verifyForm.eventId]);
 
   // Load event details when eventId changes for ticket form
   useEffect(() => {
     if (ticketForm.eventId && ticketForm.eventId !== eventForTicket?.id) {
-      // Try to get event from blockchain, but don't show error if it fails
-      // (Event might only exist in Supabase, not on blockchain yet)
-      getEvent(ticketForm.eventId).then(event => {
-        if (event) {
-          setEventForTicket(event);
-        }
-      }).catch(err => {
-        // Silently ignore - event might be newly created and only in Supabase
-        console.log('Event not found on blockchain yet:', err.message);
+      // Use contractService directly (bypasses useContract's toast-on-error)
+      contractService.getEvent(ticketForm.eventId).then(event => {
+        if (event) setEventForTicket(event);
+      }).catch(() => {
+        // Silently ignore — event may be newly created and blockchain not synced yet
       });
     }
   }, [ticketForm.eventId]);
@@ -861,37 +1027,37 @@ export default function Home() {
     <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
       <header className="bg-background/95 backdrop-blur-xl border-b border-border sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 group cursor-pointer" onClick={() => setLocation('/')}>
-                <Box className="text-primary text-2xl group-hover:scale-110 transition-transform" />
-                <h1 className="text-xl font-semibold font-bitcount tracking-normal">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-14 sm:h-16">
+            <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+              <div className="flex items-center space-x-2 group cursor-pointer flex-shrink-0" onClick={() => setLocation('/')}>
+                <Box className="text-primary text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
+                <h1 className="text-lg sm:text-xl font-semibold font-bitcount tracking-normal">
                   <span className="text-white">Block</span>
                   <span className="text-primary">Tix</span>
                 </h1>
               </div>
-              <Badge variant="outline" className="text-xs border-primary/30 text-primary-foreground/70">
+              <Badge variant="outline" className="hidden sm:flex text-xs border-primary/30 text-primary-foreground/70">
                 Sepolia Testnet
               </Badge>
               {user && (
-                <Badge variant="secondary" className="text-xs bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
-                  <UserIcon className="h-3 w-3 mr-1" />
-                  {user.user_metadata?.name || user.email}
+                <Badge variant="secondary" className="hidden md:flex text-xs bg-primary/10 text-primary truncate max-w-[140px]">
+                  <UserIcon className="h-3 w-3 mr-1 flex-shrink-0" />
+                  <span className="truncate">{user.user_metadata?.name || user.email}</span>
                 </Badge>
               )}
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <WalletConnect />
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleLogout}
-                className="text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-400 font-medium"
+                className="text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-400 font-medium px-2 sm:px-3"
               >
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline ml-2">Logout</span>
               </Button>
             </div>
           </div>
@@ -900,8 +1066,8 @@ export default function Home() {
 
       {/* Main Layout with Sidebar */}
       <div className="flex">
-        {/* Sidebar */}
-        <aside className="w-56 min-h-[calc(100vh-4rem)] bg-card/50 backdrop-blur-lg border-r border-border/50 sticky top-16 self-start">
+        {/* Sidebar — hidden on mobile, shown md+ */}
+        <aside className="hidden md:block w-56 min-h-[calc(100vh-4rem)] bg-card/50 backdrop-blur-lg border-r border-border/50 sticky top-16 self-start">
           <div className="p-4 space-y-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-2">Navigation</p>
             
@@ -925,7 +1091,16 @@ export default function Home() {
               onClick={() => setLocation('/dashboard')}
             >
               <BarChart3 className="h-4 w-4" />
-              View Dashboard
+              View Analytics
+            </Button>
+
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-3 h-11 text-sm font-medium bg-gradient-to-r from-green-500/10 to-emerald-500/10 text-green-400 border border-green-500/20 hover:from-green-500/20 hover:to-emerald-500/20 hover:text-green-300 transition-all"
+              onClick={() => setLocation('/support-login')}
+            >
+              <Shield className="h-4 w-4" />
+              Support Portal
             </Button>
 
             <div className="border-t border-border/30 my-3" />
@@ -951,7 +1126,7 @@ export default function Home() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <main className="flex-1 min-w-0 px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 md:pb-8">
 
         {/* Live Stats Overview */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -997,55 +1172,45 @@ export default function Home() {
           </Card>
         </div>
 
-        {/* Navigation Tabs */}
-        <Card className="mb-8 bg-card/50 backdrop-blur-lg border-border">
+        {/* Navigation Tabs — hidden on mobile (bottom nav handles it), shown sm+ */}
+        <Card className="mb-4 sm:mb-8 bg-card/50 backdrop-blur-lg border-border">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-5 bg-transparent p-0">
+            <TabsList className="grid w-full grid-cols-4 bg-transparent p-0">
               <TabsTrigger
                 value="create"
-                className="flex items-center space-x-2 py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
+                className="flex items-center justify-center gap-1.5 py-3 sm:py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
                 data-testid="tab-create-event"
               >
-                <Plus className="w-4 h-4" />
-                <span>Create Event</span>
+                <Plus className="w-4 h-4 flex-shrink-0" />
+                <span className="hidden sm:inline text-xs sm:text-sm">Create Event</span>
               </TabsTrigger>
               <TabsTrigger
                 value="generate"
-                className="flex items-center space-x-2 py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
+                className="flex items-center justify-center gap-1.5 py-3 sm:py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
                 data-testid="tab-generate-ticket"
               >
-                <TicketIcon className="w-4 h-4" />
-                <span>Generate Ticket</span>
+                <TicketIcon className="w-4 h-4 flex-shrink-0" />
+                <span className="hidden sm:inline text-xs sm:text-sm">Tickets</span>
               </TabsTrigger>
               <TabsTrigger
                 value="verify"
-                className="flex items-center space-x-2 py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
+                className="flex items-center justify-center gap-1.5 py-3 sm:py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
                 data-testid="tab-verify-ticket"
               >
-                <Shield className="w-4 h-4" />
-                <span>Verify Ticket</span>
+                <Shield className="w-4 h-4 flex-shrink-0" />
+                <span className="hidden sm:inline text-xs sm:text-sm">Verify</span>
               </TabsTrigger>
               <TabsTrigger
                 value="requests"
-                className="flex items-center space-x-2 py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
+                className="flex items-center justify-center gap-1.5 py-3 sm:py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
               >
-                <UserIcon className="w-4 h-4" />
-                <span>Requests</span>
+                <UserIcon className="w-4 h-4 flex-shrink-0" />
+                <span className="hidden sm:inline text-xs sm:text-sm">Requests</span>
                 {enrollmentRequests.filter(r => r.status === 'pending').length > 0 && (
-                  <Badge className="ml-2 bg-red-500 text-white px-2 py-0.5 text-xs">
+                  <Badge className="ml-1 bg-red-500 text-white px-1.5 py-0 text-[10px]">
                     {enrollmentRequests.filter(r => r.status === 'pending').length}
                   </Badge>
                 )}
-              </TabsTrigger>
-              <TabsTrigger
-                value="support"
-                className="flex items-center space-x-2 py-4 data-[state=active]:bg-green-500/10 data-[state=active]:text-green-500 data-[state=active]:border-b-2 data-[state=active]:border-green-500 transition-all duration-300"
-              >
-                <MessageCircle className="w-4 h-4" />
-                <span>Support</span>
-                <Badge className="ml-2 bg-green-500 text-white px-2 py-0.5 text-xs animate-pulse">
-                  Live
-                </Badge>
               </TabsTrigger>
             </TabsList>
 
@@ -1596,6 +1761,44 @@ export default function Home() {
                         />
                       </div>
                     )}
+
+                    {/* Volunteer Management */}
+                    <div className="mt-6 border-t border-border/40 pt-5">
+                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <UserIcon className="w-3.5 h-3.5" /> Authorized Volunteers
+                      </p>
+                      <p className="text-muted-foreground text-xs mb-3">Add volunteer / staff emails who can also verify tickets for this event. Stored locally on this device.</p>
+                      <div className="flex gap-2 mb-3">
+                        <Input
+                          placeholder="volunteer@email.com"
+                          value={volunteerInput}
+                          onChange={e => setVolunteerInput(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addVolunteer())}
+                          className="flex-1 text-sm"
+                        />
+                        <Button type="button" onClick={addVolunteer} size="sm" variant="outline">
+                          Add
+                        </Button>
+                      </div>
+                      {volunteers.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {volunteers.map(email => (
+                            <div key={email} className="flex items-center justify-between bg-muted/30 rounded-lg px-3 py-2">
+                              <span className="text-xs text-white font-mono">{email}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeVolunteer(email)}
+                                className="text-muted-foreground hover:text-destructive transition-colors ml-2"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground text-xs italic">No volunteers added yet for this event.</p>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -1707,30 +1910,26 @@ export default function Home() {
                                 <Button
                                   onClick={async () => {
                                     try {
-                                      const result = await markTicketUsed(verifyForm.eventId, verifyForm.ticketId);
-                                      if (result) {
-                                        // Update Supabase database to reflect used status
-                                        const { error: updateError } = await supabase
-                                          .from('ticket_emails')
-                                          .update({ status: 'used' })
-                                          .eq('event_id', verifyForm.eventId)
-                                          .eq('ticket_id', verifyForm.ticketId);
-                                        
-                                        if (updateError) {
-                                          console.error('Failed to update ticket status in database:', updateError);
-                                        }
-                                        
-                                        toast({
-                                          title: "Ticket Marked as Used ✓",
-                                          description: "This ticket has been marked as used and cannot be used again for entry.",
-                                        });
-                                        await handleVerifyTicket(new Event('submit') as any);
-                                      }
+                                      const { error: updateError } = await supabase
+                                        .from('ticket_emails')
+                                        .update({ status: 'used' })
+                                        .eq('event_id', parseInt(verifyForm.eventId))
+                                        .eq('ticket_id', verifyForm.ticketId);
+
+                                      if (updateError) throw updateError;
+
+                                      // Update UI instantly — no need to re-verify
+                                      setVerificationResult(prev => prev ? { ...prev, isUsed: true } : prev);
+
+                                      toast({
+                                        title: 'Ticket Marked as Used ✓',
+                                        description: 'This ticket cannot be used again for entry.',
+                                      });
                                     } catch (error: any) {
                                       toast({
-                                        title: "Failed to Mark Ticket",
+                                        title: 'Failed to Mark Ticket',
                                         description: error.message,
-                                        variant: "destructive"
+                                        variant: 'destructive',
                                       });
                                     }
                                   }}
@@ -1742,30 +1941,39 @@ export default function Home() {
                                 </Button>
                               )}
                               <Button
-                                onClick={() => {
-                                  const badge = document.createElement('div');
-                                  badge.innerHTML = `
-                                    <div style="font-family: Arial; padding: 40px; text-align: center; border: 2px solid #000;">
-                                      <h1>EVENT PASS</h1>
-                                      <p><strong>Ticket ID:</strong> ${verifyForm.ticketId}</p>
-                                      <p><strong>Event ID:</strong> ${verifyForm.eventId}</p>
-                                      <p><strong>Attendee:</strong> ${verificationResult?.attendeeName || 'N/A'}</p>
-                                      <p><strong>Owner:</strong> ${verificationResult?.owner || 'N/A'}</p>
-                                      <p>✓ Verified on Blockchain</p>
-                                    </div>
-                                  `;
-                                  const printWindow = window.open('', '_blank');
-                                  if (printWindow) {
-                                    printWindow.document.write(badge.innerHTML);
-                                    printWindow.document.close();
-                                    printWindow.print();
+                                onClick={async () => {
+                                  if (badgeSent) return;
+                                  try {
+                                    const { error: badgeErr } = await supabase
+                                      .from('ticket_emails')
+                                      .update({ badge_sent: true })
+                                      .eq('event_id', parseInt(verifyForm.eventId))
+                                      .eq('ticket_id', verifyForm.ticketId);
+                                    if (badgeErr) throw badgeErr;
+                                    setBadgeSent(true);
+                                    toast({
+                                      title: 'Badge Sent ✓',
+                                      description: `The event badge has been sent to ${verificationResult?.attendeeName}. They can download it from their dashboard.`,
+                                    });
+                                  } catch (err: any) {
+                                    toast({
+                                      title: 'Failed to Send Badge',
+                                      description: err.message,
+                                      variant: 'destructive',
+                                    });
                                   }
                                 }}
                                 variant="outline"
-                                className="flex-1 border-primary/30 hover:bg-primary/10"
-                                data-testid="button-print-badge"
+                                disabled={badgeSent}
+                                className={`flex-1 border-primary/30 ${
+                                  badgeSent
+                                    ? 'opacity-60 cursor-not-allowed bg-green-500/10 border-green-500/30 text-green-400'
+                                    : 'hover:bg-primary/10'
+                                }`}
+                                data-testid="button-send-badge"
                               >
-                                Print Badge
+                                <Star className="w-4 h-4 mr-2" />
+                                {badgeSent ? 'Badge Sent ✓' : 'Send Badge'}
                               </Button>
                             </div>
                           </>
@@ -1816,28 +2024,6 @@ export default function Home() {
 
             {/* Enrollment Requests Tab */}
             <TabsContent value="requests" className="mt-0">
-              <Tabs defaultValue="event-requests" className="w-full">
-                <div className="border-b border-border px-6 pt-4">
-                  <TabsList className="bg-muted/30 border border-border p-1 gap-1">
-                    <TabsTrigger
-                      value="event-requests"
-                      className="rounded-full px-6 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300"
-                    >
-                      <UserIcon className="mr-2 h-4 w-4" />
-                      Event Requests ({enrollmentRequests.length})
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="ad-requests"
-                      className="rounded-full px-6 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-300"
-                    >
-                      <FileText className="mr-2 h-4 w-4" />
-                      Ad Requests ({adRequests.length})
-                    </TabsTrigger>
-                  </TabsList>
-                </div>
-
-                {/* Event Requests Sub-Tab */}
-                <TabsContent value="event-requests" className="mt-0">
               <div className="grid lg:grid-cols-3 gap-6 p-6">
                 {/* Left Column - Instructions */}
                 <div className="lg:col-span-1">
@@ -1962,261 +2148,7 @@ export default function Home() {
               </div>
             </TabsContent>
 
-            {/* Ad Requests Sub-Tab */}
-            <TabsContent value="ad-requests" className="mt-0">
-              <div className="grid lg:grid-cols-3 gap-6 p-6">
-                {/* Left Column - Instructions */}
-                <div className="lg:col-span-1">
-                  <Card className="bg-card/30 border-border sticky top-24">
-                    <CardHeader className="bg-gradient-to-r from-amber-500/5 to-transparent border-b border-border/50">
-                      <CardTitle className="flex items-center space-x-2 text-white">
-                        <Info className="w-5 h-5 text-amber-400" />
-                        <span>Ad Requests Info</span>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-6">
-                      <Alert className="bg-amber-500/10 border-amber-500/20 text-amber-400">
-                        <AlertDescription>
-                          <strong className="text-white">Managing Ad Requests:</strong><br/>
-                          1. Users submit ad requests via the "Your Ad Here" feature<br/>
-                          2. Review the ad type and description<br/>
-                          3. Contact the requester to discuss pricing and timeline<br/>
-                          4. Accept or decline based on your advertising policies<br/>
-                          <br/>
-                          <strong className="text-amber-300">Ad Types:</strong><br/>
-                          • Banner Ads (Dashboard display)<br/>
-                          • Featured Event Listings<br/>
-                          • Email Promotions<br/>
-                          • Social Media Shoutouts
-                        </AlertDescription>
-                      </Alert>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Right Column - Ad Requests List */}
-                <div className="lg:col-span-2">
-                  <div className="mb-6">
-                    <h2 className="text-2xl font-bold text-white mb-2">Advertising Requests</h2>
-                    <p className="text-muted-foreground">Review and manage advertising requests from potential sponsors</p>
-                  </div>
-
-                  {adRequests.length === 0 ? (
-                    <Card className="bg-card/30 border-border border-dashed">
-                      <CardContent className="p-12 text-center">
-                        <FileText className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
-                        <p className="text-muted-foreground text-lg font-medium">No ad requests yet</p>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <div className="space-y-4">
-                      {adRequests.map((adRequest) => (
-                        <Card key={adRequest.id} className="bg-gradient-to-r from-amber-500/5 to-transparent backdrop-blur-sm border-amber-500/20 hover:border-amber-500/40 transition-all">
-                          <CardContent className="p-6">
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-3 mb-3">
-                                  <h3 className="text-lg font-bold text-white">{adRequest.business_name}</h3>
-                                  <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 px-3 py-1 font-bold uppercase text-xs">
-                                    {adRequest.ad_type}
-                                  </Badge>
-                                  <Badge className={`
-                                    ${adRequest.status === 'pending' ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30' : ''}
-                                    ${adRequest.status === 'accepted' ? 'bg-green-500/20 text-green-500 border-green-500/30' : ''}
-                                    ${adRequest.status === 'declined' ? 'bg-red-500/20 text-red-500 border-red-500/30' : ''}
-                                    px-3 py-1 font-bold uppercase text-xs
-                                  `}>
-                                    {adRequest.status}
-                                  </Badge>
-                                </div>
-                                
-                                {adRequest.image_url && (
-                                  <div className="mb-4 rounded-lg overflow-hidden border border-amber-500/20">
-                                    <img 
-                                      src={adRequest.image_url} 
-                                      alt={adRequest.business_name}
-                                      className="w-full max-h-64 object-cover"
-                                    />
-                                  </div>
-                                )}
-                                
-                                <div className="space-y-3 mb-4">
-                                  <div>
-                                    <span className="text-muted-foreground block text-xs uppercase tracking-wider font-bold mb-1">Description</span>
-                                    <p className="text-white text-sm">{adRequest.description}</p>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                      <span className="text-muted-foreground block text-xs uppercase tracking-wider font-bold mb-1">Contact Email</span>
-                                      <span className="text-white font-medium text-sm">{adRequest.contact_email}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-muted-foreground block text-xs uppercase tracking-wider font-bold mb-1">Requested</span>
-                                      <span className="text-white text-sm">{new Date(adRequest.requested_at).toLocaleDateString()}</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {adRequest.status === 'pending' && (
-                                <div className="flex gap-3">
-                                  <Button
-                                    onClick={() => {
-                                      // Update the ad request status
-                                      const updatedRequests = adRequests.map(r => 
-                                        r.id === adRequest.id ? { ...r, status: 'accepted' } : r
-                                      );
-                                      setAdRequests(updatedRequests);
-                                      
-                                      // Save updated requests back to localStorage
-                                      try {
-                                        localStorage.setItem('adRequests', JSON.stringify(updatedRequests));
-                                      } catch (error) {
-                                        console.error('Error updating ad requests:', error);
-                                      }
-                                      
-                                      // Save approved ad to localStorage
-                                      try {
-                                        const existingAds = JSON.parse(localStorage.getItem('approvedAds') || '[]');
-                                        const newAd = {
-                                          id: adRequest.id,
-                                          business_name: adRequest.business_name,
-                                          ad_type: adRequest.ad_type,
-                                          description: adRequest.description,
-                                          contact_email: adRequest.contact_email,
-                                          image_url: adRequest.image_url,
-                                          approved_at: new Date().toISOString()
-                                        };
-                                        existingAds.push(newAd);
-                                        localStorage.setItem('approvedAds', JSON.stringify(existingAds));
-                                        
-                                        alert(`Ad request accepted! This ad will now appear on user dashboards. Contact ${adRequest.contact_email} to discuss pricing.`);
-                                      } catch (error) {
-                                        console.error('Error saving approved ad:', error);
-                                        alert(`Ad request accepted! Contact ${adRequest.contact_email} to discuss pricing.`);
-                                      }
-                                    }}
-                                    className="bg-green-600 hover:bg-green-700 text-white font-bold"
-                                  >
-                                    <CheckCircle className="w-4 h-4 mr-2" />
-                                    Accept
-                                  </Button>
-                                  <Button
-                                    onClick={() => {
-                                      const updatedRequests = adRequests.map(r => 
-                                        r.id === adRequest.id ? { ...r, status: 'declined' } : r
-                                      );
-                                      setAdRequests(updatedRequests);
-                                      
-                                      // Save updated requests back to localStorage
-                                      try {
-                                        localStorage.setItem('adRequests', JSON.stringify(updatedRequests));
-                                      } catch (error) {
-                                        console.error('Error updating ad requests:', error);
-                                      }
-                                    }}
-                                    variant="destructive"
-                                    className="font-bold"
-                                  >
-                                    <XCircle className="h-4 w-4 mr-2" />
-                                    Decline
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-                </TabsContent>
-              </Tabs>
-            </TabsContent>
-
-            {/* Support Team Tab */}
-            <TabsContent value="support" className="mt-0">
-              <div className="p-6">
-                <div className="mb-6">
-                  <h2 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
-                    <MessageCircle className="h-6 w-6 text-green-500" />
-                    Support Chat Center
-                  </h2>
-                  <p className="text-muted-foreground">Manage support requests from users in real-time</p>
-                </div>
-
-                <div className="grid lg:grid-cols-3 gap-6">
-                  {/* Chat Inbox */}
-                  <div className="lg:col-span-1">
-                    <Card className="bg-card/30 border-border">
-                      <CardHeader className="bg-green-500/5 border-b border-border/50">
-                        <CardTitle className="text-white flex items-center gap-2">
-                          <UserIcon className="h-5 w-5 text-green-500" />
-                          Active Chats
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="p-4">
-                        <div className="text-center py-12">
-                          <MessageCircle className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
-                          <p className="text-muted-foreground text-sm">No active chat requests yet</p>
-                          <p className="text-xs text-muted-foreground mt-2">User chats will appear here when they contact you</p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Chat Window */}
-                  <div className="lg:col-span-2">
-                    <Card className="bg-card/30 border-border h-[600px] flex flex-col">
-                      <CardHeader className="bg-green-500/5 border-b border-border/50">
-                        <CardTitle className="text-white flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <MessageCircle className="h-5 w-5 text-green-500" />
-                            <span>Support Chat</span>
-                          </div>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="flex-1 flex items-center justify-center p-4">
-                        <div className="text-center">
-                          <MessageCircle className="h-20 w-20 text-muted-foreground/20 mx-auto mb-4" />
-                          <p className="text-xl font-semibold text-white mb-2">No conversation selected</p>
-                          <p className="text-muted-foreground">Select a chat from the left to start responding</p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                </div>
-
-                {/* Stats */}
-                <div className="grid md:grid-cols-4 gap-4 mt-6">
-                  <Card className="bg-green-500/5 border-green-500/20">
-                    <CardContent className="p-4 text-center">
-                      <p className="text-2xl font-bold text-white">{orgStats.totalEvents}</p>
-                      <p className="text-xs text-muted-foreground uppercase">Total Events</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-blue-500/5 border-blue-500/20">
-                    <CardContent className="p-4 text-center">
-                      <p className="text-2xl font-bold text-white">{orgStats.totalTicketsMinted}</p>
-                      <p className="text-xs text-muted-foreground uppercase">Tickets Minted</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-amber-500/5 border-amber-500/20">
-                    <CardContent className="p-4 text-center">
-                      <p className="text-2xl font-bold text-white">{orgStats.ticketsUsed}</p>
-                      <p className="text-xs text-muted-foreground uppercase">Tickets Used</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-purple-500/5 border-purple-500/20">
-                    <CardContent className="p-4 text-center">
-                      <p className="text-2xl font-bold text-white">{orgStats.totalRevenue.toFixed(4)} ETH</p>
-                      <p className="text-xs text-muted-foreground uppercase">Total Revenue</p>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
-            </TabsContent>
+            {/* Support & Ads moved → /support-dashboard */}
           </Tabs>
         </Card>
       </main>
@@ -2378,6 +2310,52 @@ export default function Home() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Mobile Bottom Navigation — visible on mobile only */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-background/95 backdrop-blur-xl border-t border-border safe-area-bottom">
+        <div className="flex items-stretch justify-around h-16">
+          <button
+            onClick={() => setActiveTab('create')}
+            className={`flex flex-col items-center justify-center flex-1 gap-0.5 text-[10px] font-medium transition-colors ${activeTab === 'create' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Plus className="w-5 h-5" />
+            Create
+          </button>
+          <button
+            onClick={() => setActiveTab('generate')}
+            className={`flex flex-col items-center justify-center flex-1 gap-0.5 text-[10px] font-medium transition-colors ${activeTab === 'generate' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <TicketIcon className="w-5 h-5" />
+            Tickets
+          </button>
+          <button
+            onClick={() => setActiveTab('verify')}
+            className={`flex flex-col items-center justify-center flex-1 gap-0.5 text-[10px] font-medium transition-colors ${activeTab === 'verify' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Shield className="w-5 h-5" />
+            Verify
+          </button>
+          <button
+            onClick={() => setActiveTab('requests')}
+            className={`relative flex flex-col items-center justify-center flex-1 gap-0.5 text-[10px] font-medium transition-colors ${activeTab === 'requests' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <UserIcon className="w-5 h-5" />
+            Requests
+            {enrollmentRequests.filter(r => r.status === 'pending').length > 0 && (
+              <span className="absolute top-1.5 right-[calc(50%-18px)] bg-red-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center">
+                {enrollmentRequests.filter(r => r.status === 'pending').length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setLocation('/dashboard')}
+            className="flex flex-col items-center justify-center flex-1 gap-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <BarChart3 className="w-5 h-5" />
+            Analytics
+          </button>
+        </div>
+      </nav>
 
     </div>
   );

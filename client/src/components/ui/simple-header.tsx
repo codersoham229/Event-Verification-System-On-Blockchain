@@ -9,6 +9,7 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useLocation } from 'wouter';
@@ -89,6 +90,13 @@ export function SimpleHeader() {
                             >
                                 👤 User Login
                             </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem 
+                                onClick={() => setLocation('/support-login')}
+                                className="text-xs font-bold uppercase tracking-widest cursor-pointer hover:bg-muted focus:bg-muted text-green-400 focus:text-green-400"
+                            >
+                                🛡️ Support Team Login
+                            </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
                     <Button
@@ -153,6 +161,13 @@ export function SimpleHeader() {
                                     onClick={() => { setLocation('/user-login'); setOpen(false); }}
                                 >
                                     👤 User
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    className="w-full text-xs font-bold uppercase tracking-widest border-green-500/30 bg-green-500/5 text-green-400 hover:bg-green-500/10"
+                                    onClick={() => { setLocation('/support-login'); setOpen(false); }}
+                                >
+                                    🛡️ Support Team
                                 </Button>
                                 <div className="h-px bg-border my-2"></div>
                                 <Button

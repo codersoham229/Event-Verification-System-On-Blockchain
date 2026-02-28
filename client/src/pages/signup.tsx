@@ -6,6 +6,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { localAuth } from '@/lib/local-auth';
 import { useToast } from '@/hooks/use-toast';
 import { BackgroundPathsDecoration } from '@/components/ui/background-paths-decoration';
+import { ApprovedAdsBar } from '@/components/approved-ads-bar';
 
 export default function SignUpPage() {
   const [, setLocation] = useLocation();
@@ -166,6 +167,7 @@ export default function SignUpPage() {
 
   return (
     <div className="bg-background min-h-screen text-foreground selection:bg-primary/30 relative overflow-hidden flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <ApprovedAdsBar />
       <div className="absolute top-8 left-8 z-20">
         <button
           onClick={() => setLocation('/')}

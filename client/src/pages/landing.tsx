@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
+import { ApprovedAdsBar } from '@/components/approved-ads-bar';
 import { Button } from '@/components/ui/neon-button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -106,6 +107,8 @@ export default function LandingPage() {
 
       {/* Navigation */}
       <SimpleHeader />
+
+      <ApprovedAdsBar />
 
       <NewHero />
 

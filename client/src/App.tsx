@@ -17,6 +17,8 @@ import NeonButtonDemo from "@/pages/neon-button-demo";
 import { BackgroundBeamsDemo } from "@/components/background-beams-demo";
 import Showcase from "@/pages/demo";
 import VerifyTicket from "@/pages/verify-ticket";
+import SupportLogin from "@/pages/support-login";
+import SupportDashboard from "@/pages/support-dashboard";
 
 function Router() {
   return (
@@ -30,6 +32,8 @@ function Router() {
       <Route path="/home" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/verify-ticket" component={VerifyTicket} />
+      <Route path="/support-login" component={SupportLogin} />
+      <Route path="/support-dashboard" component={SupportDashboard} />
       <Route path="/neon-button-demo" component={NeonButtonDemo} />
       <Route path="/beams-demo" component={BackgroundBeamsDemo} />
       <Route path="/demo" component={Showcase} />

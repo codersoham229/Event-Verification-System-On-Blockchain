@@ -8,8 +8,12 @@ CREATE TABLE IF NOT EXISTS ticket_emails (
   unique_hash TEXT,
   qr_data TEXT,
   status VARCHAR(50) DEFAULT 'sent',
+  badge_sent BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- If table already exists, add badge_sent column:
+-- ALTER TABLE ticket_emails ADD COLUMN IF NOT EXISTS badge_sent BOOLEAN DEFAULT FALSE;
 
 -- Create index for faster lookups
 CREATE INDEX IF NOT EXISTS idx_ticket_emails_recipient ON ticket_emails(recipient_email);

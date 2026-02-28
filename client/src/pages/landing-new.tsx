@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
+import { ApprovedAdsBar } from '@/components/approved-ads-bar';
 import { Button } from '@/components/ui/neon-button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -128,6 +129,8 @@ export default function LandingPage() {
           </div>
         </div>
       </nav>
+
+      <ApprovedAdsBar />
 
       {/* Hero Section */}
       <section className="relative z-10 pt-20 pb-16 px-4 sm:px-6 lg:px-8">

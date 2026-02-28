@@ -74,9 +74,22 @@ export class ContractService {
       }
     }
     
-    // If still no provider, create one with public RPC
+    // If still no provider, create one with a public Sepolia RPC
     if (!provider) {
-      provider = new ethers.JsonRpcProvider('https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161');
+      // Try multiple public RPCs in order
+      const rpcs = [
+        'https://rpc.sepolia.org',
+        'https://sepolia.gateway.tenderly.co',
+        'https://ethereum-sepolia-rpc.publicnode.com',
+      ];
+      for (const rpc of rpcs) {
+        try {
+          provider = new ethers.JsonRpcProvider(rpc);
+          break;
+        } catch {
+          continue;
+        }
+      }
     }
 
     const validAddress = ethers.getAddress(this.contractAddress);
@@ -228,66 +241,45 @@ export class ContractService {
     attendeeName: string;
     isUsed: boolean;
   }> {
+    const ticketIdNum = Number(ticketId);
+    const eventIdNum = Number(eventId);
+    console.log('🔍 Verifying ticket on blockchain:', { eventId: eventIdNum, ticketId: ticketIdNum, contractAddress: this.contractAddress });
+
     try {
       const contract = await this.getReadOnlyContract();
-      const ticketIdNum = Number(ticketId);
-      
-      console.log('🔍 Verifying ticket on blockchain:', { 
-        eventId, 
-        ticketId: ticketIdNum,
-        contractAddress: this.contractAddress 
-      });
-      
-      // Simply check if the NFT exists by calling ownerOf
-      // If it doesn't exist, it will throw an error
+
+      // Primary: call the contract's own verifyTicket function
+      try {
+        const result = await contract.verifyTicket(eventIdNum, ticketIdNum);
+        console.log('✅ verifyTicket result:', result);
+        return {
+          valid: Boolean(result[0]),
+          owner: String(result[1]),
+          attendeeName: String(result[2]),
+          isUsed: Boolean(result[3]),
+        };
+      } catch (contractErr: any) {
+        console.warn('⚠️ contract.verifyTicket threw, falling back to ownerOf:', contractErr.message);
+      }
+
+      // Fallback: check NFT existence via ownerOf + getTicket
       try {
         const owner = await contract.ownerOf(ticketIdNum);
-        console.log('✅ NFT exists! Owner:', owner);
-        
-        // NFT exists, so ticket is valid
-        // Try to get additional details using getTicket function
+        console.log('✅ ownerOf exists:', owner);
         try {
-          const ticketDetails = await contract.getTicket(ticketIdNum);
-          console.log('✅ Got ticket details:', ticketDetails);
-          
-          return {
-            valid: true,
-            owner: ticketDetails[1], // ticketOwner
-            attendeeName: ticketDetails[2],
-            isUsed: ticketDetails[3]
-          };
-        } catch (detailError) {
-          console.warn('⚠️ Could not get ticket details, but NFT exists');
-          // NFT exists, just return basic info
-          return {
-            valid: true,
-            owner: owner,
-            attendeeName: 'Ticket Holder',
-            isUsed: false
-          };
+          const td = await contract.getTicket(ticketIdNum);
+          return { valid: true, owner: String(td[1]), attendeeName: String(td[2]), isUsed: Boolean(td[3]) };
+        } catch {
+          return { valid: true, owner: String(owner), attendeeName: 'Ticket Holder', isUsed: false };
         }
-      } catch (ownerError: any) {
-        console.error('❌ NFT does not exist:', ownerError.message);
-        return {
-          valid: false,
-          owner: '',
-          attendeeName: '',
-          isUsed: false
-        };
+      } catch (ownerErr: any) {
+        console.error('❌ ownerOf threw — NFT likely does not exist:', ownerErr.message);
+        return { valid: false, owner: '', attendeeName: '', isUsed: false };
       }
     } catch (error: any) {
       console.error('❌ Verify ticket error:', error);
-      console.error('Error details:', {
-        message: error.message,
-        code: error.code,
-        reason: error.reason
-      });
-      return {
-        valid: false,
-        owner: '',
-        attendeeName: '',
-        isUsed: false
-      };
+      // Re-throw so callers can implement their own fallback (e.g. Supabase)
+      throw error;
     }
   }
 
