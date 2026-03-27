@@ -170,6 +170,84 @@ server/
 
 ---
 
+## Deployment on Vercel
+
+### Prerequisites
+- Vercel account (vercel.com)
+- GitHub repository with this code pushed
+- All environment variables ready
+
+### Steps to Deploy
+
+#### 1. Push Code to GitHub
+```bash
+git add .
+git commit -m "Prepare for Vercel deployment"
+git push origin main
+```
+
+#### 2. Connect to Vercel
+1. Go to [vercel.com](https://vercel.com)
+2. Click **Add New** → **Project**
+3. Select your GitHub repository
+4. Click **Import**
+
+#### 3. Configure Environment Variables
+In the Vercel dashboard, add these environment variables:
+
+**Frontend Variables (used by Vite):**
+```
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_CONTRACT_ADDRESS=0xABe88DaE8eB0051940b21Eac6043C97Ed4ad7F9b
+```
+
+**Backend Variables (Node.js/Express):**
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-service-role-key
+DATABASE_URL=postgresql://user:password@your-db
+NODE_ENV=production
+```
+
+> **Note:** Get these from your Supabase project settings
+
+#### 4. Deployment Settings
+Vercel will auto-detect and use `vercel.json` configuration:
+- **Build Command:** `vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist`
+- **Output Directory:** `dist/public` (frontend) and `dist/index.js` (server)
+- **Start Command:** `node dist/index.js`
+
+#### 5. Deploy
+Click **Deploy** and wait for the build to complete. Your app will be live at `https://your-project.vercel.app`
+
+### Verify Deployment
+1. Check that the frontend loads at your Vercel URL
+2. Test login/signup with Supabase
+3. Test event creation (organizer) and browsing (attendee)
+4. Verify QR code functionality
+
+### Post-Deployment Checklist
+- [ ] Frontend loads without errors
+- [ ] Supabase connection works
+- [ ] MetaMask wallet connects on event creation page
+- [ ] QR code generation works
+- [ ] Badge download works
+- [ ] Verify ticket endpoint responds correctly
+
+### Troubleshooting Vercel Deployment
+
+| Problem | Solution |
+|---------|----------|
+| Build fails with "Missing environment variable" | Add all `VITE_*` and backend vars to Vercel dashboard |
+| 404 on routes after deployment | vercel.json rewrites configured correctly; auto-detected |
+| Supabase connection fails | Check `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` |
+| MetaMask not connecting | Import MetaMask extension in browser; check Sepolia network |
+| "Cannot find module" errors | Ensure `node_modules` not in .gitignore; dependencies in package.json |
+| Database queries fail | Verify `SUPABASE_URL` and `SUPABASE_KEY` in backend environment |
+
+---
+
 ## Troubleshooting
 
 | Problem | Fix |
