@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -12,10 +12,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WalletConnect } from '@/components/wallet-connect';
 import { QRCodeDisplay } from '@/components/qr-code-display';
 import { QRScanner } from '@/components/qr-scanner';
 import { TransactionStatus } from '@/components/transaction-status';
+import { PhotoViewer } from '@/components/photo-viewer';
 
 import { useWallet } from '@/hooks/use-wallet';
 import { useContract } from '@/hooks/use-contract';
@@ -51,8 +53,12 @@ import {
   X,
   BarChart3,
   LayoutDashboard,
-  Star
+  Star,
+  Upload,
+  Mail
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import mammoth from 'mammoth';
 
 export default function Home() {
   const [, setLocation] = useLocation();
@@ -83,7 +89,9 @@ export default function Home() {
     location: '',
     ticketPrice: '',
     maxTickets: '',
-    isPublic: true
+    isPublic: true,
+    eventType: '',
+    inviteEmails: ''
   });
   const [locationSuggestions, setLocationSuggestions] = useState<string[]>([]);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
@@ -128,6 +136,24 @@ export default function Home() {
   const [enrollmentRequests, setEnrollmentRequests] = useState<any[]>([]);
   const [adRequests, setAdRequests] = useState<any[]>([]);
   const [activeSidebarSection, setActiveSidebarSection] = useState('tabs');
+
+  // Photo viewer state for enrollment requests
+  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
+  const [photoViewerData, setPhotoViewerData] = useState<{
+    photoPath: string | null;
+    encryptionKey: string | null;
+    encryptionIv: string | null;
+    requesterName: string;
+  }>({ photoPath: null, encryptionKey: null, encryptionIv: null, requesterName: '' });
+
+  // Organizer Chat Inbox
+  const [chatConversations, setChatConversations] = useState<any[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<{ event_id: number; sender_email: string; event_name: string; sender_name: string } | null>(null);
+  const selectedConversationRef = useRef(selectedConversation);
+  useEffect(() => { selectedConversationRef.current = selectedConversation; }, [selectedConversation]);
+  const [conversationMessages, setConversationMessages] = useState<any[]>([]);
+  const [orgReplyMessage, setOrgReplyMessage] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
   
   // Organizer live stats
   const [orgStats, setOrgStats] = useState({
@@ -192,10 +218,11 @@ export default function Home() {
     }
   }, [user]);
 
-  // Fetch enrollment requests
+  // Fetch enrollment requests and chat conversations
   useEffect(() => {
     if (walletState.address) {
       fetchEnrollmentRequests();
+      fetchChatConversations();
     }
   }, [walletState.address]);
 
@@ -242,13 +269,19 @@ export default function Home() {
         totalRevenue += price * eventTickets.length;
       });
 
+      // Fetch pending enrollments directly to avoid stale state
+      const { data: enrollData } = await supabase
+        .from('enrollment_requests')
+        .select('id')
+        .eq('status', 'pending');
+
       setOrgStats({
         totalEvents: allEvents.length,
         totalTicketsMinted: allTickets.length,
         ticketsUsed: allTickets.filter((t: any) => t.status === 'used').length,
         ticketsApproved: allTickets.filter((t: any) => t.status === 'approved').length,
         totalRevenue,
-        pendingEnrollments: enrollmentRequests.filter(r => r.status === 'pending').length,
+        pendingEnrollments: (enrollData || []).length,
       });
     } catch (err) {
       console.error('Error fetching org stats:', err);
@@ -277,10 +310,29 @@ export default function Home() {
       })
       .subscribe();
 
+    const chatChannel = supabase
+      .channel('org-chat-live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
+        fetchChatConversations();
+        // If viewing the same conversation, append the new message
+        const conv = selectedConversationRef.current;
+        if (conv && payload.new) {
+          const msg = payload.new as any;
+          if (msg.event_id === conv.event_id && msg.sender_email === conv.sender_email) {
+            setConversationMessages(prev => {
+              if (prev.some(m => m.id === msg.id)) return prev;
+              return [...prev, msg];
+            });
+          }
+        }
+      })
+      .subscribe();
+
     return () => {
       eventsChannel.unsubscribe();
       ticketsChannel.unsubscribe();
       enrollChannel.unsubscribe();
+      chatChannel.unsubscribe();
     };
   }, []);
 
@@ -291,7 +343,7 @@ export default function Home() {
       const { data, error } = await supabase
         .from('enrollment_requests')
         .select('*')
-        .or(`organizer_address.eq.${walletState.address},organizer_address.eq.0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb`)
+        .or(`organizer_address.eq.${walletState.address},organizer_address.eq.0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0`)
         .order('requested_at', { ascending: false });
 
       if (data) {
@@ -314,6 +366,7 @@ export default function Home() {
 
     try {
       let ticketPrice = '0.001'; // Default ticket price
+      let eventInfo: any = null;
 
       // Check if it's a demo event (ID >= 9990)
       if (request.event_id >= 9990) {
@@ -335,7 +388,7 @@ export default function Home() {
         // Fetch event details from Supabase for real events
         const { data: eventData, error: eventError } = await supabase
           .from('events')
-          .select('price')
+          .select('price, name, description, date, location, event_type')
           .eq('id', request.event_id)
           .single();
 
@@ -344,6 +397,8 @@ export default function Home() {
         }
 
         ticketPrice = eventData.price;
+        // Reuse already-fetched event data for ticket enrichment
+        eventInfo = eventData;
       }
 
       // Hash the email for privacy — never store raw email on public blockchain
@@ -365,15 +420,15 @@ export default function Home() {
       // window.location.origin auto-adapts: localhost during dev, real domain when deployed,
       // or local IP (e.g. 192.168.x.x:5000) when accessed via network IP.
       const approvalQrPayload = btoa(unescape(encodeURIComponent(JSON.stringify({
-        n: request.event_name || 'Event',
-        d: '',
-        l: '',
+        n: eventInfo?.name || request.event_name || 'Event',
+        d: eventInfo?.date || '',
+        l: eventInfo?.location || '',
         e: request.requester_email,
         h: mintResult.transactionHash,
       }))));
       const verifyUrl = `${window.location.origin}/verify-ticket?eventId=${request.event_id}&ticketId=${mintResult.ticketId}&d=${encodeURIComponent(approvalQrPayload)}`;
 
-      // Create ticket for the user in Supabase
+      // Create ticket for the user in Supabase with full event details + photo
       const { error: ticketError } = await supabase
         .from('ticket_emails')
         .insert({
@@ -382,7 +437,16 @@ export default function Home() {
           ticket_id: mintResult.ticketId,
           unique_hash: mintResult.transactionHash,
           qr_data: verifyUrl,
-          status: 'approved'
+          status: 'approved',
+          event_name: eventInfo?.name || request.event_name || 'Event',
+          event_date: eventInfo?.date || null,
+          event_location: eventInfo?.location || null,
+          event_description: eventInfo?.description || null,
+          event_type: eventInfo?.event_type || request.event_type || null,
+          attendee_name: request.requester_name || null,
+          photo_path: request.photo_path || null,
+          photo_encryption_key: request.photo_encryption_key || null,
+          photo_encryption_iv: request.photo_encryption_iv || null,
         });
 
       if (ticketError) throw ticketError;
@@ -437,31 +501,153 @@ export default function Home() {
     }
   };
 
-  // Handle Excel/CSV file upload
+  // ── Organizer Chat Inbox ──────────────────────────────────────────────
+  const fetchChatConversations = async () => {
+    if (!walletState.address) return;
+    try {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('organizer_address', walletState.address)
+        .order('created_at', { ascending: false });
+
+      if (data) {
+        // Group by event_id + sender_email to get unique conversations
+        const convMap = new Map<string, any>();
+        for (const msg of data) {
+          const key = `${msg.event_id}::${msg.sender_email}`;
+          if (!convMap.has(key) || msg.sender_role === 'user') {
+            // Keep the latest user message as the conversation preview
+            if (!convMap.has(key)) {
+              convMap.set(key, {
+                event_id: msg.event_id,
+                event_name: msg.event_name,
+                sender_email: msg.sender_email,
+                sender_name: msg.sender_name,
+                last_message: msg.message,
+                last_time: msg.created_at,
+                unread: msg.sender_role === 'user',
+              });
+            }
+          }
+        }
+        setChatConversations(Array.from(convMap.values()));
+      }
+    } catch (err) {
+      console.error('Error fetching chat conversations:', err);
+    }
+  };
+
+  const loadConversation = async (conv: { event_id: number; sender_email: string; event_name: string; sender_name: string }) => {
+    setSelectedConversation(conv);
+    setChatLoading(true);
+    try {
+      // Get all messages for this conversation (from this user + organizer replies)
+      const { data: userMsgs } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('event_id', conv.event_id)
+        .eq('sender_email', conv.sender_email)
+        .eq('sender_role', 'user')
+        .order('created_at', { ascending: true });
+
+      const { data: orgMsgs } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('event_id', conv.event_id)
+        .eq('sender_email', conv.sender_email)
+        .eq('organizer_address', walletState.address)
+        .eq('sender_role', 'organizer')
+        .order('created_at', { ascending: true });
+
+      const allMsgs = [...(userMsgs || []), ...(orgMsgs || [])];
+      const uniqueMsgs = Array.from(new Map(allMsgs.map(m => [m.id, m])).values())
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      setConversationMessages(uniqueMsgs);
+    } catch (err) {
+      console.error('Error loading conversation:', err);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const sendOrganizerReply = async () => {
+    if (!orgReplyMessage.trim() || !selectedConversation || !walletState.address) return;
+
+    const newMsg = {
+      event_id: selectedConversation.event_id,
+      event_name: selectedConversation.event_name,
+      sender_email: selectedConversation.sender_email,
+      sender_name: user?.user_metadata?.name || 'Organizer',
+      sender_role: 'organizer',
+      organizer_address: walletState.address,
+      message: orgReplyMessage.trim(),
+    };
+
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .insert(newMsg)
+      .select()
+      .single();
+
+    if (error) {
+      toast({ title: 'Failed to send reply', description: error.message, variant: 'destructive' });
+    } else if (data) {
+      setConversationMessages(prev => [...prev, data]);
+      setOrgReplyMessage('');
+    }
+  };
+
+  // Handle Excel/CSV/Word file upload for email extraction
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploadingFile(true);
     try {
-      const text = await file.text();
       let emails: string[] = [];
+      const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+      const fileName = file.name.toLowerCase();
 
-      // Check if it's CSV or try to parse as text
-      if (file.name.endsWith('.csv') || file.name.endsWith('.txt')) {
-        // Parse CSV - handle both comma and newline separated
-        const lines = text.split(/[\r\n]+/);
-        emails = lines
-          .map(line => {
-            // Try to extract email from CSV (could be in any column)
-            const emailMatch = line.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-            return emailMatch ? emailMatch[0] : line.trim();
-          })
-          .filter(email => email && email.includes('@'));
+      if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        // Parse Excel files
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        for (const sheetName of workbook.SheetNames) {
+          const sheet = workbook.Sheets[sheetName];
+          const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { header: 1 });
+          for (const row of rows) {
+            if (Array.isArray(row)) {
+              for (const cell of row) {
+                if (typeof cell === 'string') {
+                  const found = cell.match(emailRegex);
+                  if (found) emails.push(...found);
+                }
+              }
+            }
+          }
+        }
+      } else if (fileName.endsWith('.docx')) {
+        // Parse Word documents
+        const buffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+        const found = result.value.match(emailRegex);
+        if (found) emails.push(...found);
       } else {
-        // Try to extract all emails from any text file
-        const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-        emails = text.match(emailRegex) || [];
+        // CSV, TXT, or any text file
+        const text = await file.text();
+        if (fileName.endsWith('.csv') || fileName.endsWith('.txt')) {
+          const lines = text.split(/[\r\n]+/);
+          emails = lines
+            .map(line => {
+              const emailMatch = line.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+              return emailMatch ? emailMatch[0] : line.trim();
+            })
+            .filter(email => email && email.includes('@'));
+        } else {
+          emails = text.match(emailRegex) || [];
+        }
       }
 
       if (emails.length === 0) {
@@ -476,10 +662,12 @@ export default function Home() {
       // Remove duplicates
       const uniqueEmails = [...new Set(emails)];
 
-      // Update the form with emails (one per line for better readability)
-      setTicketForm(prev => ({
+      // Update invite emails for private events
+      setEventForm(prev => ({
         ...prev,
-        emails: uniqueEmails.join('\n')
+        inviteEmails: prev.inviteEmails
+          ? prev.inviteEmails + '\n' + uniqueEmails.join('\n')
+          : uniqueEmails.join('\n')
       }));
 
       toast({
@@ -617,6 +805,20 @@ export default function Home() {
     }
   };
 
+  const eventTypeLabels: Record<string, string> = {
+    'concert': '🎵 Concert',
+    'festival': '🎪 Festival',
+    'tech-conference': '💻 Tech Conference',
+    'tech-meetup': '👥 Tech Meetup',
+    'workshop': '🛠️ Workshop',
+    'hackathon': '⚡ Hackathon',
+    'networking': '🤝 Networking',
+    'sports': '⚽ Sports',
+    'exhibition': '🎨 Exhibition',
+    'webinar': '📺 Webinar',
+    'other': '📌 Other'
+  };
+
 
   // Handle event creation
   const handleCreateEvent = async (e: React.FormEvent) => {
@@ -665,11 +867,8 @@ export default function Home() {
       };
       setCreatedEvent(eventData);
 
-      // Auto-fill event ID in ticket form
-      setTicketForm(prev => ({ ...prev, eventId: result.eventId }));
-
-      // Switch to ticket generation tab
-      setActiveTab('generate');
+      // Switch to requests tab after event creation
+      setActiveTab('requests');
 
       // Sync event to Supabase for user dashboard
       // IMPORTANT: Use blockchain event ID as Supabase ID so ticket_emails.event_id matches
@@ -689,7 +888,8 @@ export default function Home() {
             price: eventForm.ticketPrice,
             organizer_address: walletState.address,
             transaction_hash: result.transactionHash,
-            is_public: eventForm.isPublic
+            is_public: eventForm.isPublic,
+            event_type: eventForm.eventType || 'other'
           });
 
         if (insertErr) {
@@ -706,13 +906,51 @@ export default function Home() {
               price: eventForm.ticketPrice,
               organizer_address: walletState.address,
               transaction_hash: result.transactionHash,
-              is_public: eventForm.isPublic
+              is_public: eventForm.isPublic,
+              event_type: eventForm.eventType || 'other'
             });
           if (fallbackErr) console.log('Note: Event sync skipped:', fallbackErr.message);
         }
         fetchOrgStats();
       } catch (err) {
         console.log('Note: Event sync skipped');
+      }
+
+      // Send invites for private events
+      if (!eventForm.isPublic && eventForm.inviteEmails.trim()) {
+        try {
+          const emails = eventForm.inviteEmails
+            .split('\n')
+            .map(e => e.trim())
+            .filter(e => e && e.includes('@'));
+
+          const eventId = parseInt(result.eventId);
+          const invites = emails.map(email => ({
+            event_id: eventId,
+            event_name: eventForm.name,
+            event_type: eventForm.eventType || 'other',
+            organizer_address: walletState.address,
+            requester_email: email,
+            requester_name: email.split('@')[0],
+            status: 'invited',
+            requested_at: new Date().toISOString(),
+          }));
+
+          const { error: inviteErr } = await supabase
+            .from('enrollment_requests')
+            .insert(invites);
+
+          if (inviteErr) {
+            console.log('Note: Some invites may have failed:', inviteErr.message);
+          } else {
+            toast({
+              title: "Invitations Sent! 📧",
+              description: `Sent ${emails.length} invite(s) for this private event.`,
+            });
+          }
+        } catch (err) {
+          console.log('Note: Invite sending skipped');
+        }
       }
     }
   };
@@ -1094,15 +1332,6 @@ export default function Home() {
               View Analytics
             </Button>
 
-            <Button
-              variant="ghost"
-              className="w-full justify-start gap-3 h-11 text-sm font-medium bg-gradient-to-r from-green-500/10 to-emerald-500/10 text-green-400 border border-green-500/20 hover:from-green-500/20 hover:to-emerald-500/20 hover:text-green-300 transition-all"
-              onClick={() => setLocation('/support-login')}
-            >
-              <Shield className="h-4 w-4" />
-              Support Portal
-            </Button>
-
             <div className="border-t border-border/30 my-3" />
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-2">Account</p>
 
@@ -1185,14 +1414,6 @@ export default function Home() {
                 <span className="hidden sm:inline text-xs sm:text-sm">Create Event</span>
               </TabsTrigger>
               <TabsTrigger
-                value="generate"
-                className="flex items-center justify-center gap-1.5 py-3 sm:py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
-                data-testid="tab-generate-ticket"
-              >
-                <TicketIcon className="w-4 h-4 flex-shrink-0" />
-                <span className="hidden sm:inline text-xs sm:text-sm">Tickets</span>
-              </TabsTrigger>
-              <TabsTrigger
                 value="verify"
                 className="flex items-center justify-center gap-1.5 py-3 sm:py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
                 data-testid="tab-verify-ticket"
@@ -1209,6 +1430,19 @@ export default function Home() {
                 {enrollmentRequests.filter(r => r.status === 'pending').length > 0 && (
                   <Badge className="ml-1 bg-red-500 text-white px-1.5 py-0 text-[10px]">
                     {enrollmentRequests.filter(r => r.status === 'pending').length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger
+                value="messages"
+                className="flex items-center justify-center gap-1.5 py-3 sm:py-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary transition-all duration-300"
+                onClick={() => fetchChatConversations()}
+              >
+                <MessageCircle className="w-4 h-4 flex-shrink-0" />
+                <span className="hidden sm:inline text-xs sm:text-sm">Messages</span>
+                {chatConversations.length > 0 && (
+                  <Badge className="ml-1 bg-purple-500 text-white px-1.5 py-0 text-[10px]">
+                    {chatConversations.length}
                   </Badge>
                 )}
               </TabsTrigger>
@@ -1273,6 +1507,31 @@ export default function Home() {
                           required
                           data-testid="textarea-event-description"
                         />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="eventType">Event Type</Label>
+                        <Select
+                          value={eventForm.eventType}
+                          onValueChange={(value) => setEventForm(prev => ({ ...prev, eventType: value }))}
+                        >
+                          <SelectTrigger id="eventType" data-testid="select-event-type">
+                            <SelectValue placeholder="Select event type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="concert">🎵 Concert</SelectItem>
+                            <SelectItem value="festival">🎪 Festival</SelectItem>
+                            <SelectItem value="tech-conference">💻 Tech Conference</SelectItem>
+                            <SelectItem value="tech-meetup">👥 Tech Community Meetup</SelectItem>
+                            <SelectItem value="workshop">🛠️ Workshop</SelectItem>
+                            <SelectItem value="hackathon">⚡ Hackathon</SelectItem>
+                            <SelectItem value="networking">🤝 Networking Event</SelectItem>
+                            <SelectItem value="sports">⚽ Sports Event</SelectItem>
+                            <SelectItem value="exhibition">🎨 Exhibition</SelectItem>
+                            <SelectItem value="webinar">📺 Webinar / Online</SelectItem>
+                            <SelectItem value="other">📌 Other</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
 
                       <div className="relative">
@@ -1395,6 +1654,49 @@ export default function Home() {
                         />
                       </div>
 
+                      {/* Private Event - Invite by Email */}
+                      {!eventForm.isPublic && (
+                        <div className="space-y-3 p-4 border border-amber-500/30 rounded-lg bg-amber-500/5">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Mail className="w-4 h-4 text-amber-400" />
+                            <Label className="text-base font-semibold text-amber-300">Invite Users by Email</Label>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Add email addresses of users you want to invite to this private event. They will receive enrollment invites.
+                          </p>
+                          <Textarea
+                            value={eventForm.inviteEmails}
+                            onChange={(e) => setEventForm(prev => ({ ...prev, inviteEmails: e.target.value }))}
+                            placeholder="Enter email addresses (one per line)&#10;user1@gmail.com&#10;user2@gmail.com"
+                            rows={4}
+                            className="font-mono text-sm"
+                          />
+                          <div className="flex items-center gap-2">
+                            <label className="flex-1">
+                              <input
+                                type="file"
+                                accept=".xlsx,.xls,.csv,.txt,.docx"
+                                onChange={handleFileUpload}
+                                className="hidden"
+                              />
+                              <div className="flex items-center justify-center gap-2 px-4 py-2 border border-dashed border-amber-500/40 rounded-lg cursor-pointer hover:bg-amber-500/10 transition-colors text-sm text-amber-300">
+                                <Upload className="w-4 h-4" />
+                                {uploadingFile ? 'Processing...' : 'Upload Excel / Word / CSV'}
+                              </div>
+                            </label>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground/60">
+                            Supported: .xlsx, .xls, .csv, .txt, .docx — emails will be auto-extracted
+                          </p>
+                          {eventForm.inviteEmails && (
+                            <div className="flex items-center gap-2 text-xs text-emerald-400">
+                              <CheckCircle className="w-3 h-3" />
+                              {eventForm.inviteEmails.split('\n').filter(e => e.trim() && e.includes('@')).length} email(s) ready to invite
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <Button
                         type="submit"
                         className="w-full bg-primary hover:bg-primary/90"
@@ -1430,7 +1732,7 @@ export default function Home() {
                           3. Set ticket price in ETH and maximum ticket capacity<br/>
                           4. Choose event visibility (Public/Private)<br/>
                           5. Click "Deploy Event to Blockchain" and confirm the MetaMask transaction<br/>
-                          6. Your event ID will be auto-filled in the Generate Ticket tab
+                          6. Your event will appear on all registered users' dashboards
                         </AlertDescription>
                       </Alert>
                     </CardContent>
@@ -1475,195 +1777,27 @@ export default function Home() {
                                 {createdEvent.maxTickets - createdEvent.ticketsSold}
                               </p>
                             </div>
+                            {eventForm.eventType && (
+                              <div className="col-span-2">
+                                <span className="text-muted-foreground">Event Type:</span>
+                                <p className="font-medium text-white">
+                                  {eventTypeLabels[eventForm.eventType] || eventForm.eventType}
+                                </p>
+                              </div>
+                            )}
                           </div>
                         </div>
 
                         <Alert className="bg-green-500/10 border-green-500/20 text-green-400 mt-4">
                           <Info className="h-4 w-4" />
                           <AlertDescription>
-                            Event ID <strong className="text-white">{createdEventId}</strong> has been auto-filled in the Generate Ticket tab. Switch to that tab to generate tickets for users.
+                            Event ID <strong className="text-white">{createdEventId}</strong> is now live. Users can see this event on their dashboard and enroll for it. Review enrollment requests in the Requests tab.
                           </AlertDescription>
                         </Alert>
                       </CardContent>
                     </Card>
                   </div>
                 )}
-              </div>
-            </TabsContent>
-
-            {/* Generate Ticket Tab */}
-            <TabsContent value="generate" className="mt-0">
-              <div className="grid lg:grid-cols-2 gap-8 p-6">
-                {/* Generate Ticket Form */}
-                <Card className="bg-card/30 border-border overflow-hidden">
-                  <CardHeader className="bg-gradient-to-r from-primary/5 to-transparent border-b border-border/50">
-                    <CardTitle className="flex items-center space-x-2 text-white">
-                      <TicketIcon className="w-5 h-5 text-primary" />
-                      <span>Generate Tickets for Users</span>
-                    </CardTitle>
-                    <p className="text-muted-foreground">Generate tickets and send them to users via email (supports bulk)</p>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                    <form onSubmit={handleMintTicket} className="space-y-4">
-                      <div>
-                        <Label htmlFor="eventId">Event ID</Label>
-                        <Input
-                          id="eventId"
-                          value={ticketForm.eventId}
-                          onChange={(e) => setTicketForm(prev => ({ ...prev, eventId: e.target.value }))}
-                          placeholder="Auto-filled from created event"
-                          required
-                          data-testid="input-event-id"
-                          className="w-full"
-                        />
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <Label htmlFor="emails">User Emails (one per line or comma-separated for bulk)</Label>
-                          <label htmlFor="file-upload" className="cursor-pointer">
-                            <div className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md border border-primary/30 transition-colors">
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                              </svg>
-                              {uploadingFile ? 'Loading...' : 'Upload CSV/Excel'}
-                            </div>
-                            <input
-                              id="file-upload"
-                              type="file"
-                              accept=".csv,.txt,.xlsx,.xls"
-                              onChange={handleFileUpload}
-                              className="hidden"
-                              disabled={uploadingFile}
-                            />
-                          </label>
-                        </div>
-                        <Textarea
-                          id="emails"
-                          value={ticketForm.emails}
-                          onChange={(e) => setTicketForm(prev => ({ ...prev, emails: e.target.value }))}
-                          placeholder="user1@example.com&#10;user2@example.com&#10;user3@example.com&#10;&#10;Or click 'Upload CSV/Excel' to import from file"
-                          rows={8}
-                          required
-                          data-testid="input-emails"
-                          className="font-mono text-sm"
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">💡 Separate emails with commas or new lines. Each user will receive a unique QR code. You can also upload a CSV/Excel file.</p>
-                      </div>
-
-                      {/* Info about blockchain minting */}
-                      <Alert className="bg-purple-500/10 border-purple-500/20 text-purple-400">
-                        <Info className="h-4 w-4" />
-                        <AlertDescription>
-                          <strong className="text-white">⛓️ Blockchain NFT Minting:</strong> Each ticket is minted as an NFT on the Sepolia blockchain. A <strong>privacy hash</strong> of the email is stored on-chain (not the actual email). You'll need to confirm each transaction in MetaMask. Uses <strong>test ETH</strong> (free from faucets) — no real money required.
-                        </AlertDescription>
-                      </Alert>
-
-                      {/* Event Info Display */}
-                      {eventForTicket && (
-                        <Card className="bg-background/80 border-border overflow-hidden">
-                          <CardHeader className="py-3 px-4 bg-primary/5 border-b border-border">
-                            <CardTitle className="text-sm font-bold text-white">Event Details</CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-2 text-sm p-4">
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground text-xs uppercase tracking-wider font-semibold">Event Name:</span>
-                              <span className="font-medium text-white" data-testid="text-event-name">
-                                {eventForTicket.name}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground text-xs uppercase tracking-wider font-semibold">Date:</span>
-                              <span className="font-medium text-white" data-testid="text-event-date">
-                                {new Date(eventForTicket.date).toLocaleDateString()}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground text-xs uppercase tracking-wider font-semibold">Price:</span>
-                              <span className="font-medium text-primary" data-testid="text-event-price">
-                                {eventForTicket.ticketPrice} ETH
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground text-xs uppercase tracking-wider font-semibold">Available:</span>
-                              <span className="font-medium text-primary" data-testid="text-event-available">
-                                {eventForTicket.maxTickets - eventForTicket.ticketsSold}/{eventForTicket.maxTickets}
-                              </span>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      )}
-
-                      {!walletState.isConnected && (
-                        <Alert className="bg-red-500/10 border-red-500/20 text-red-400">
-                          <AlertTriangle className="h-4 w-4" />
-                          <AlertDescription>
-                            <strong className="text-white">Wallet Required:</strong> Connect your MetaMask wallet to the Sepolia testnet to mint NFT tickets on the blockchain.
-                          </AlertDescription>
-                        </Alert>
-                      )}
-
-                      <Button
-                        type="submit"
-                        disabled={sendingEmails || !walletState.isConnected || !walletState.isCorrectChain}
-                        className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold shadow-lg"
-                        data-testid="button-mint-ticket"
-                      >
-                        {sendingEmails ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div> : <TicketIcon className="w-4 h-4 mr-2" />}
-                        {sendingEmails ? 'Minting on Blockchain...' : 'Mint NFT Tickets on Blockchain'}
-                      </Button>
-                    </form>
-
-                    {transactionStatus.status !== 'idle' && activeTab === 'generate' && (
-                      <div className="mt-4">
-                        <TransactionStatus
-                          status={transactionStatus}
-                          onClose={resetTransactionStatus}
-                        />
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Info Card */}
-                <Card className="bg-card/30 border-border">
-                  <CardContent className="pt-6">
-                    <Alert className="bg-blue-500/10 border-blue-500/20 text-blue-400">
-                      <Info className="h-4 w-4" />
-                      <AlertDescription>
-                        <strong className="text-white">How Blockchain Minting Works:</strong><br/>
-                        1. Enter the event ID (auto-filled when you create an event)<br/>
-                        2. Enter user email addresses (one per line or comma-separated)<br/>
-                        3. Click "Mint NFT Tickets on Blockchain"<br/>
-                        4. Confirm each MetaMask transaction (each ticket = 1 NFT on-chain)<br/>
-                        5. Each user gets a QR code that verifies their ticket directly on the Ethereum blockchain
-                      </AlertDescription>
-                    </Alert>
-                    
-                    {eventForTicket && (
-                      <div className="mt-4">
-                        <h4 className="font-semibold text-white mb-3 flex items-center gap-2">
-                          <Calendar className="w-4 h-4 text-primary" />
-                          Event Information
-                        </h4>
-                        <div className="bg-background/80 rounded-lg p-4 border border-border space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Event Name:</span>
-                            <span className="font-medium text-white">{eventForTicket.name}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Date:</span>
-                            <span className="font-medium text-white">{new Date(eventForTicket.date).toLocaleDateString()}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Price:</span>
-                            <span className="font-medium text-primary">{eventForTicket.ticketPrice} ETH</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
               </div>
             </TabsContent>
 
@@ -2073,6 +2207,11 @@ export default function Home() {
                             <div className="flex-1">
                               <div className="flex items-center gap-3 mb-3">
                                 <h3 className="text-lg font-bold text-white">{request.event_name}</h3>
+                                {request.event_type && (
+                                  <Badge variant="outline" className="text-xs px-2 py-0.5 border-primary/30 text-primary/80">
+                                    {eventTypeLabels[request.event_type] || request.event_type}
+                                  </Badge>
+                                )}
                                 <Badge className={`
                                   ${request.status === 'pending' ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30' : ''}
                                   ${request.status === 'approved' ? 'bg-green-500/20 text-green-500 border-green-500/30' : ''}
@@ -2116,6 +2255,34 @@ export default function Home() {
                                   <span className="text-muted-foreground block text-xs uppercase tracking-wider font-bold mb-1">Requested</span>
                                   <span className="text-white">{new Date(request.requested_at).toLocaleDateString()}</span>
                                 </div>
+                                <div>
+                                  <span className="text-muted-foreground block text-xs uppercase tracking-wider font-bold mb-1">Enrollment Photo</span>
+                                  {request.has_photo ? (
+                                    <span className="text-green-400 font-medium flex items-center gap-1.5">
+                                      <Camera className="w-3.5 h-3.5" />
+                                      Photo ✓
+                                      <button
+                                        onClick={() => {
+                                          setPhotoViewerData({
+                                            photoPath: request.photo_path,
+                                            encryptionKey: request.photo_encryption_key,
+                                            encryptionIv: request.photo_encryption_iv,
+                                            requesterName: request.requester_name,
+                                          });
+                                          setPhotoViewerOpen(true);
+                                        }}
+                                        className="ml-1 text-xs text-primary underline hover:text-primary/80"
+                                      >
+                                        View
+                                      </button>
+                                    </span>
+                                  ) : (
+                                    <span className="text-red-400 font-medium flex items-center gap-1.5">
+                                      <XCircle className="w-3.5 h-3.5" />
+                                      No Photo
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
 
@@ -2149,6 +2316,139 @@ export default function Home() {
             </TabsContent>
 
             {/* Support & Ads moved → /support-dashboard */}
+
+            {/* Messages Tab — Organizer Chat Inbox */}
+            <TabsContent value="messages" className="mt-0">
+              <div className="p-6">
+                <div className="mb-6">
+                  <h2 className="text-2xl font-bold text-white mb-2">Messages</h2>
+                  <p className="text-muted-foreground">View and respond to messages from users about your events</p>
+                </div>
+
+                <div className="grid lg:grid-cols-3 gap-6">
+                  {/* Conversation List */}
+                  <div className="lg:col-span-1 space-y-2">
+                    <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-3">Conversations</h3>
+                    {chatConversations.length === 0 ? (
+                      <Card className="bg-card/30 border-border border-dashed">
+                        <CardContent className="p-8 text-center">
+                          <MessageCircle className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                          <p className="text-muted-foreground text-sm">No messages yet</p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      chatConversations.map((conv, idx) => (
+                        <Card
+                          key={`${conv.event_id}-${conv.sender_email}-${idx}`}
+                          className={`cursor-pointer transition-all hover:border-purple-500/50 ${
+                            selectedConversation?.event_id === conv.event_id && selectedConversation?.sender_email === conv.sender_email
+                              ? 'bg-purple-500/10 border-purple-500/50'
+                              : 'bg-card/40 border-border'
+                          }`}
+                          onClick={() => loadConversation(conv)}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-white truncate">{conv.sender_name}</p>
+                                <p className="text-xs text-primary truncate">{conv.event_name}</p>
+                                <p className="text-xs text-muted-foreground truncate mt-1">{conv.last_message}</p>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                {new Date(conv.last_time).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Chat Window */}
+                  <div className="lg:col-span-2">
+                    {selectedConversation ? (
+                      <Card className="bg-card/40 border-border flex flex-col" style={{ minHeight: '400px', maxHeight: '500px' }}>
+                        {/* Chat Header */}
+                        <div className="p-4 border-b border-border flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
+                            <UserIcon className="w-4 h-4 text-purple-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-white">{selectedConversation.sender_name}</p>
+                            <p className="text-xs text-muted-foreground">{selectedConversation.sender_email} · {selectedConversation.event_name}</p>
+                          </div>
+                        </div>
+
+                        {/* Messages */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                          {chatLoading ? (
+                            <div className="flex items-center justify-center py-8">
+                              <p className="text-sm text-muted-foreground">Loading messages...</p>
+                            </div>
+                          ) : conversationMessages.length === 0 ? (
+                            <div className="flex items-center justify-center py-8">
+                              <p className="text-sm text-muted-foreground">No messages in this conversation</p>
+                            </div>
+                          ) : (
+                            conversationMessages.map((msg) => (
+                              <div key={msg.id} className={`flex ${msg.sender_role === 'organizer' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[75%] rounded-lg p-3 ${
+                                  msg.sender_role === 'organizer'
+                                    ? 'bg-purple-500 text-white'
+                                    : 'bg-muted/50 border border-border'
+                                }`}>
+                                  <p className={`text-xs font-semibold mb-1 ${
+                                    msg.sender_role === 'organizer' ? 'text-white/80' : 'text-primary'
+                                  }`}>
+                                    {msg.sender_role === 'organizer' ? 'You' : msg.sender_name}
+                                  </p>
+                                  <p className="text-sm text-white">{msg.message}</p>
+                                  <p className={`text-[10px] mt-1 ${
+                                    msg.sender_role === 'organizer' ? 'text-white/60' : 'text-muted-foreground'
+                                  }`}>
+                                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+
+                        {/* Reply Input */}
+                        <div className="p-4 border-t border-border flex gap-2">
+                          <input
+                            type="text"
+                            value={orgReplyMessage}
+                            onChange={(e) => setOrgReplyMessage(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && orgReplyMessage.trim()) {
+                                sendOrganizerReply();
+                              }
+                            }}
+                            placeholder="Type your reply..."
+                            className="flex-1 px-3 py-2 bg-background border border-border rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                          <Button
+                            onClick={sendOrganizerReply}
+                            disabled={!orgReplyMessage.trim()}
+                            className="px-4 bg-purple-500 hover:bg-purple-600 text-white"
+                          >
+                            Send
+                          </Button>
+                        </div>
+                      </Card>
+                    ) : (
+                      <Card className="bg-card/30 border-border border-dashed flex items-center justify-center" style={{ minHeight: '400px' }}>
+                        <CardContent className="text-center">
+                          <MessageCircle className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
+                          <p className="text-muted-foreground">Select a conversation to view messages</p>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
           </Tabs>
         </Card>
       </main>
@@ -2159,6 +2459,16 @@ export default function Home() {
         isOpen={isQRScannerOpen}
         onScan={handleQRScan}
         onClose={() => setIsQRScannerOpen(false)}
+      />
+
+      {/* Enrollment Photo Viewer */}
+      <PhotoViewer
+        isOpen={photoViewerOpen}
+        onClose={() => setPhotoViewerOpen(false)}
+        photoPath={photoViewerData.photoPath}
+        encryptionKey={photoViewerData.encryptionKey}
+        encryptionIv={photoViewerData.encryptionIv}
+        requesterName={photoViewerData.requesterName}
       />
 
       {/* Profile Settings Dialog */}
@@ -2320,13 +2630,6 @@ export default function Home() {
           >
             <Plus className="w-5 h-5" />
             Create
-          </button>
-          <button
-            onClick={() => setActiveTab('generate')}
-            className={`flex flex-col items-center justify-center flex-1 gap-0.5 text-[10px] font-medium transition-colors ${activeTab === 'generate' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            <TicketIcon className="w-5 h-5" />
-            Tickets
           </button>
           <button
             onClick={() => setActiveTab('verify')}

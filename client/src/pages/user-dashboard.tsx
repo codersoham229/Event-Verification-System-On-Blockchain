@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useLocation } from 'wouter';
 
 import { ApprovedAdsBar } from '@/components/approved-ads-bar';
+import { AnnouncementBanner } from '@/components/announcement-banner';
 import { useAuth } from '@/lib/auth-context';
 import { useWallet } from '@/hooks/use-wallet';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,6 +48,9 @@ import {
   Send
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { CameraCapture } from '@/components/camera-capture';
+import { encryptPhoto, decryptPhoto } from '@/lib/photo-encryption';
+import { Camera } from 'lucide-react';
 
 interface Event {
   id: number;
@@ -60,6 +64,7 @@ interface Event {
   price: string;
   organizer_address?: string;
   organizer_name?: string;
+  event_type?: string;
 }
 
 interface UserTicket {
@@ -69,12 +74,18 @@ interface UserTicket {
   event_name: string;
   event_date: string;
   event_location: string;
+  event_description?: string;
+  event_type?: string;
+  attendee_name?: string;
   recipient_email: string;
   unique_hash: string;
   qr_data: string;
   used: boolean;
   purchased_at: string;
   organizer_name?: string;
+  photo_path?: string;
+  photo_encryption_key?: string;
+  photo_encryption_iv?: string;
 }
 
 export default function UserDashboard() {
@@ -93,6 +104,10 @@ export default function UserDashboard() {
   const [userAcceptedEvents, setUserAcceptedEvents] = useState<number[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<UserTicket | null>(null);
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
+
+  // Photo capture for enrollment
+  const [capturedPhoto, setCapturedPhoto] = useState<{ blob: Blob; previewUrl: string } | null>(null);
+  const [enrollmentStep, setEnrollmentStep] = useState<'photo' | 'details'>('photo');
   
   // Profile & Settings
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
@@ -135,14 +150,15 @@ export default function UserDashboard() {
   // Chat
   const [chatOpen, setChatOpen] = useState(false);
   const [chatType, setChatType] = useState<'organizer' | 'support'>('support');
-  const [chatMessage, setChatMessage] = useState('');
-  const [supportAssigned, setSupportAssigned] = useState(false);
-  const [chatMessages, setChatMessages] = useState([
-    { id: 1, sender: 'support', name: 'Support Team', message: 'Hey! How can we help you today?', timestamp: new Date(Date.now() - 3600000) },
-  ]);
+  const [supportChatMessage, setSupportChatMessage] = useState('');
+  const [orgChatMessage, setOrgChatMessage] = useState('');
+  const [supportChatMessages, setSupportChatMessages] = useState<any[]>([]);
+  const [supportChatLoading, setSupportChatLoading] = useState(false);
+  const supportChatEndRef = useRef<HTMLDivElement>(null);
   const [organizerChatOpen, setOrganizerChatOpen] = useState(false);
   const [selectedEventForChat, setSelectedEventForChat] = useState<Event | null>(null);
   const [organizerMessages, setOrganizerMessages] = useState<any[]>([]);
+  const [orgChatLoading, setOrgChatLoading] = useState(false);
   
   // Sidebar and Payment
   const [activeSidebarSection, setActiveSidebarSection] = useState<'dashboard' | 'settings' | 'payments' | 'attended' | 'pending' | 'badges'>('dashboard');
@@ -156,6 +172,10 @@ export default function UserDashboard() {
   
   // Approved Ads
   const [approvedAds, setApprovedAds] = useState<any[]>([]);
+  
+  // Ticket photo display
+  const [ticketPhotoUrl, setTicketPhotoUrl] = useState<string | null>(null);
+  const [ticketPhotoLoading, setTicketPhotoLoading] = useState(false);
 
   // Handle ?section=badges URL param (used by organizer's "View Badge" button)
   useEffect(() => {
@@ -178,7 +198,6 @@ export default function UserDashboard() {
     setUserAcceptedEvents([]);
     setUserTickets([]);
     setEvents([]);
-    setEventsAttended(0);
 
     fetchData();
     
@@ -245,10 +264,29 @@ export default function UserDashboard() {
       })
       .subscribe();
 
+    // Real-time subscription for chat replies from organizers
+    const chatSubscription = supabase
+      .channel('user-chat-live')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'chat_messages'
+      }, (payload) => {
+        const msg = payload.new as any;
+        if (msg.sender_role === 'organizer' && msg.sender_email === user?.email) {
+          setOrganizerMessages(prev => {
+            if (prev.some(m => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+        }
+      })
+      .subscribe();
+
     return () => {
       clearInterval(adsInterval);
       ticketsSubscription.unsubscribe();
       eventsSubscription.unsubscribe();
+      chatSubscription.unsubscribe();
     };
   }, [user]);
 
@@ -267,6 +305,28 @@ export default function UserDashboard() {
         .eq('is_active', true)
         .order('date', { ascending: true });
 
+      // Fetch private events the user was invited to
+      let invitedEvents: any[] = [];
+      if (user?.email) {
+        const { data: invites } = await supabase
+          .from('enrollment_requests')
+          .select('event_id')
+          .eq('requester_email', user.email)
+          .eq('status', 'invited');
+        
+        if (invites && invites.length > 0) {
+          const invitedIds = invites.map((inv: any) => inv.event_id).filter(Boolean);
+          if (invitedIds.length > 0) {
+            const { data: privateEvents } = await supabase
+              .from('events')
+              .select('*')
+              .in('id', invitedIds)
+              .eq('is_active', true);
+            invitedEvents = privateEvents || [];
+          }
+        }
+      }
+
       // Static demo events for users to see (mix of free and paid)
       const staticEvents = [
         {
@@ -279,10 +339,11 @@ export default function UserDashboard() {
           total_tickets: 500,
           available_tickets: 450,
           price: '0.05',
-          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0',
           organizer_name: 'TechCorp Events',
           is_active: true,
-          is_public: true
+          is_public: true,
+          event_type: 'tech-conference'
         },
         {
           id: 9998,
@@ -294,10 +355,11 @@ export default function UserDashboard() {
           total_tickets: 300,
           available_tickets: 275,
           price: '0.03',
-          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0',
           organizer_name: 'Web3 Foundation',
           is_active: true,
-          is_public: true
+          is_public: true,
+          event_type: 'tech-conference'
         },
         {
           id: 9997,
@@ -309,10 +371,11 @@ export default function UserDashboard() {
           total_tickets: 1000,
           available_tickets: 850,
           price: '0.08',
-          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0',
           organizer_name: 'Blockchain Alliance',
           is_active: true,
-          is_public: true
+          is_public: true,
+          event_type: 'exhibition'
         },
         {
           id: 9996,
@@ -324,10 +387,11 @@ export default function UserDashboard() {
           total_tickets: 400,
           available_tickets: 320,
           price: '0.06',
-          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0',
           organizer_name: 'AI Research Labs',
           is_active: true,
-          is_public: true
+          is_public: true,
+          event_type: 'tech-conference'
         },
         {
           id: 9995,
@@ -339,10 +403,11 @@ export default function UserDashboard() {
           total_tickets: 200,
           available_tickets: 150,
           price: '0.0',
-          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0',
           organizer_name: 'Crypto Community',
           is_active: true,
-          is_public: true
+          is_public: true,
+          event_type: 'tech-meetup'
         },
         {
           id: 9994,
@@ -354,10 +419,11 @@ export default function UserDashboard() {
           total_tickets: 150,
           available_tickets: 100,
           price: '0.02',
-          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0',
           organizer_name: 'Digital Art Collective',
           is_active: true,
-          is_public: true
+          is_public: true,
+          event_type: 'exhibition'
         },
         {
           id: 9993,
@@ -369,10 +435,11 @@ export default function UserDashboard() {
           total_tickets: 250,
           available_tickets: 200,
           price: '0.0',
-          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0',
           organizer_name: 'Startup Accelerator',
           is_active: true,
-          is_public: true
+          is_public: true,
+          event_type: 'networking'
         },
         {
           id: 9992,
@@ -384,31 +451,37 @@ export default function UserDashboard() {
           total_tickets: 100,
           available_tickets: 75,
           price: '0.04',
-          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+          organizer_address: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0',
           organizer_name: 'Trading Academy',
           is_active: true,
-          is_public: true
+          is_public: true,
+          event_type: 'workshop'
         }
       ];
 
-      // Combine real events with static demo events
-      const allEvents = [...(realEventsData || []), ...staticEvents];
+      // Combine real events, invited private events, and static demo events
+      // Deduplicate by ID
+      const realIds = new Set((realEventsData || []).map((e: any) => e.id));
+      const uniqueInvited = invitedEvents.filter((e: any) => !realIds.has(e.id));
+      const allEvents = [...(realEventsData || []), ...uniqueInvited, ...staticEvents];
       setEvents(allEvents as any);
 
       // Fetch tickets sent to user's email from ticket_emails table
+      let ticketEmailsData: any[] | null = null;
       if (user?.email) {
-        const { data: ticketEmailsData } = await supabase
+        const { data } = await supabase
           .from('ticket_emails')
           .select('*')
           .eq('recipient_email', user.email)
           .order('created_at', { ascending: false });
+        ticketEmailsData = data;
 
         if (ticketEmailsData && ticketEmailsData.length > 0) {
           // Batch-fetch all events in ONE query (fixes N+1 and type mismatch)
           const eventIds = [...new Set(ticketEmailsData.map((t: any) => Number(t.event_id)).filter(Boolean))];
           const { data: eventsData } = await supabase
             .from('events')
-            .select('id, name, date, location, organizer_name')
+            .select('id, name, date, location, description, event_type, organizer_name')
             .in('id', eventIds);
 
           const eventsMap = new Map((eventsData || []).map((e: any) => [Number(e.id), e]));
@@ -453,13 +526,19 @@ export default function UserDashboard() {
               event_name: eventData?.name || (ticket as any).event_name || demoEvent?.name || embeddedName || 'Unknown Event',
               event_date: eventData?.date || (ticket as any).event_date || demoEvent?.date || embeddedDate || '',
               event_location: eventData?.location || (ticket as any).event_location || demoEvent?.location || embeddedLocation || '',
+              event_description: eventData?.description || (ticket as any).event_description || demoEvent?.description || '',
+              event_type: eventData?.event_type || (ticket as any).event_type || (demoEvent as any)?.event_type || '',
+              attendee_name: (ticket as any).attendee_name || '',
               recipient_email: ticket.recipient_email,
               unique_hash: ticket.unique_hash,
               qr_data: ticket.qr_data,
               used: ticket.status === 'used',
               badge_sent: ticket.badge_sent === true,
               purchased_at: ticket.created_at,
-              organizer_name: eventData?.organizer_name || demoEvent?.organizer_name || 'Event Organizer'
+              organizer_name: eventData?.organizer_name || demoEvent?.organizer_name || 'Event Organizer',
+              photo_path: (ticket as any).photo_path || null,
+              photo_encryption_key: (ticket as any).photo_encryption_key || null,
+              photo_encryption_iv: (ticket as any).photo_encryption_iv || null,
             };
           });
           setUserTickets(ticketsWithEvents as any);
@@ -477,7 +556,7 @@ export default function UserDashboard() {
         .order('created_at', { ascending: false });
 
       if (ticketsData && ticketsData.length > 0) {
-        // Transform and merge with existing tickets
+        // Transform and merge with existing tickets, deduplicating by ticket_id
         const transformedTickets = ticketsData.map((ticket: any) => ({
           id: ticket.id,
           ticket_id: ticket.ticket_id,
@@ -492,7 +571,11 @@ export default function UserDashboard() {
           purchased_at: ticket.created_at
         }));
         
-        setUserTickets(prev => [...prev, ...transformedTickets] as any);
+        setUserTickets(prev => {
+          const existingIds = new Set(prev.map(t => t.ticket_id));
+          const newOnly = transformedTickets.filter((t: any) => !existingIds.has(t.ticket_id));
+          return [...prev, ...newOnly] as any;
+        });
       }
 
       // Fetch user's applied events to prevent reapplying (only if user is logged in)
@@ -516,9 +599,10 @@ export default function UserDashboard() {
         }
       }
 
-      // Calculate events attended (used tickets)
-      const attendedCount = userTickets?.filter((t: any) => t.used).length || 0;
-      setEventsAttended(attendedCount);
+      // Calculate events attended from the freshly-fetched data (not stale state)
+      const usedFromEmails = (ticketEmailsData || []).filter((t: any) => t.status === 'used').length;
+      const usedFromLegacy = (ticketsData || []).filter((t: any) => t.used).length;
+      setEventsAttended(usedFromEmails + usedFromLegacy);
 
       // Initialize profile form with user data
       if (user) {
@@ -541,6 +625,29 @@ export default function UserDashboard() {
     setLocation('/');
   };
 
+  // Load and decrypt the enrollment photo for a ticket
+  const loadTicketPhoto = async (ticket: UserTicket) => {
+    if (!ticket.photo_path || !ticket.photo_encryption_key || !ticket.photo_encryption_iv) {
+      setTicketPhotoUrl(null);
+      return;
+    }
+    setTicketPhotoLoading(true);
+    try {
+      const { data, error } = await supabase.storage
+        .from('enrollment-photos')
+        .download(ticket.photo_path);
+      if (error || !data) throw error || new Error('Download failed');
+      const decrypted = await decryptPhoto(data, ticket.photo_encryption_key, ticket.photo_encryption_iv);
+      const url = URL.createObjectURL(decrypted);
+      setTicketPhotoUrl(url);
+    } catch (err) {
+      console.error('Failed to load ticket photo:', err);
+      setTicketPhotoUrl(null);
+    } finally {
+      setTicketPhotoLoading(false);
+    }
+  };
+
   const handleEnrollClick = (event: Event) => {
     setSelectedEvent(event);
     // Pre-populate email with logged-in user's email
@@ -548,27 +655,198 @@ export default function UserDashboard() {
       fullName: user?.user_metadata?.name || '',
       email: user?.email || ''
     });
+    // Reset photo state for fresh enrollment
+    setCapturedPhoto(null);
+    setEnrollmentStep('photo');
     setEnrollmentOpen(true);
   };
 
+  const handlePhotoCaptured = (blob: Blob, previewUrl: string) => {
+    setCapturedPhoto({ blob, previewUrl });
+    setEnrollmentStep('details');
+  };
+
+  const handleRetakePhoto = () => {
+    if (capturedPhoto) {
+      URL.revokeObjectURL(capturedPhoto.previewUrl);
+    }
+    setCapturedPhoto(null);
+    setEnrollmentStep('photo');
+  };
+
+  // ── Organizer Chat (Supabase-powered) ──────────────────────────────────
+  const loadChatMessages = async (event: Event) => {
+    if (!user?.email) return;
+    setOrgChatLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('event_id', event.event_id || event.id)
+        .eq('sender_email', user.email)
+        .order('created_at', { ascending: true });
+
+      // Also fetch organizer replies for this user's conversation
+      const { data: orgReplies } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('event_id', event.event_id || event.id)
+        .eq('sender_role', 'organizer')
+        .eq('organizer_address', event.organizer_address || '')
+        .order('created_at', { ascending: true });
+
+      // Merge and deduplicate by id, then sort
+      const allMsgs = [...(data || []), ...(orgReplies || [])];
+      const uniqueMsgs = Array.from(new Map(allMsgs.map(m => [m.id, m])).values())
+        .filter(m => {
+          // Keep user's own messages + organizer replies that reference this user
+          if (m.sender_role === 'user' && m.sender_email === user.email) return true;
+          if (m.sender_role === 'organizer') return true;
+          return false;
+        })
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      setOrganizerMessages(uniqueMsgs);
+    } catch (err) {
+      console.error('Error loading chat:', err);
+    } finally {
+      setOrgChatLoading(false);
+    }
+  };
+
+  const sendOrganizerChat = async (messageText: string) => {
+    if (!messageText.trim() || !selectedEventForChat || !user?.email) return;
+    const eventId = selectedEventForChat.event_id || selectedEventForChat.id;
+
+    const newMsg = {
+      event_id: eventId,
+      event_name: selectedEventForChat.name,
+      sender_email: user.email,
+      sender_name: user.user_metadata?.name || enrollmentForm.fullName || 'User',
+      sender_role: 'user',
+      organizer_address: selectedEventForChat.organizer_address || '',
+      message: messageText.trim(),
+    };
+
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .insert(newMsg)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Failed to send message:', error);
+      alert('Failed to send message. Please try again.');
+    } else if (data) {
+      setOrganizerMessages(prev => [...prev, data]);
+      setOrgChatMessage('');
+    }
+  };
+
+  // Support chat: load messages
+  const loadSupportChat = async () => {
+    if (!user?.email) return;
+    setSupportChatLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('support_chat_messages')
+        .select('*')
+        .eq('user_email', user.email)
+        .order('created_at', { ascending: true });
+      if (!error && data) {
+        setSupportChatMessages(data);
+      }
+    } catch (err) { console.error('Failed to load support chat:', err); }
+    finally { setSupportChatLoading(false); }
+  };
+
+  // Support chat: send message
+  const sendSupportChat = async (messageText: string) => {
+    if (!messageText.trim() || !user?.email) return;
+    try {
+      const { error } = await supabase.from('support_chat_messages').insert({
+        user_email: user.email,
+        user_name: user.user_metadata?.name || enrollmentForm.fullName || 'User',
+        sender_role: 'user',
+        message: messageText.trim(),
+      });
+      if (error) throw error;
+      setSupportChatMessage('');
+    } catch (err) {
+      console.error('Failed to send support message:', err);
+    }
+  };
+
+  // Support chat: realtime subscription
+  useEffect(() => {
+    if (!user?.email) return;
+    const channel = supabase
+      .channel('user-support-chat')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_chat_messages' }, (payload) => {
+        const newMsg = payload.new as any;
+        if (newMsg.user_email === user.email) {
+          setSupportChatMessages(prev => [...prev, newMsg]);
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.email]);
+
+  // Auto scroll support chat
+  useEffect(() => {
+    supportChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [supportChatMessages]);
+
+  // Load support chat when dialog opens
+  useEffect(() => {
+    if (chatOpen && chatType === 'support') {
+      loadSupportChat();
+    }
+  }, [chatOpen, chatType]);
+
   const handleEnrollmentSubmit = async () => {
-    if (!enrollmentForm.fullName || !enrollmentForm.email || !selectedEvent) {
+    if (!enrollmentForm.fullName || !enrollmentForm.email || !selectedEvent || !capturedPhoto) {
       return;
     }
 
     setEnrolling(true);
     try {
-      // Create an enrollment request for the organizer
+      // Encrypt the photo before upload
+      const { encryptedBlob, key, iv } = await encryptPhoto(capturedPhoto.blob);
+
+      // Upload encrypted photo to Supabase Storage
+      const eventId = selectedEvent.event_id || selectedEvent.id;
+      const photoFileName = `${eventId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.enc`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('enrollment-photos')
+        .upload(photoFileName, encryptedBlob, {
+          contentType: 'application/octet-stream',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('Failed to upload photo:', uploadError);
+        alert('Failed to upload photo. Please try again.');
+        return;
+      }
+
+      // Create an enrollment request with photo metadata
       const { error } = await supabase
         .from('enrollment_requests')
         .insert({
-          event_id: selectedEvent.event_id || selectedEvent.id,
+          event_id: eventId,
           event_name: selectedEvent.name,
+          event_type: selectedEvent.event_type || null,
           organizer_address: selectedEvent.organizer_address,
           requester_email: enrollmentForm.email,
           requester_name: enrollmentForm.fullName,
           status: 'pending',
-          requested_at: new Date().toISOString()
+          requested_at: new Date().toISOString(),
+          photo_path: photoFileName,
+          photo_encryption_key: key,
+          photo_encryption_iv: iv,
+          has_photo: true,
         });
 
       if (error) {
@@ -576,12 +854,16 @@ export default function UserDashboard() {
         alert('Failed to send request. Please make sure the database is set up correctly.');
       } else {
         alert('Enrollment request sent successfully! The organizer will review your request.');
+        // Cleanup
+        if (capturedPhoto) URL.revokeObjectURL(capturedPhoto.previewUrl);
+        setCapturedPhoto(null);
+        setEnrollmentStep('photo');
         setEnrollmentOpen(false);
         setEnrollmentForm({ fullName: '', email: '' });
         setSelectedEvent(null);
         
         // Add to applied events list
-        setUserAppliedEvents(prev => [...prev, selectedEvent.event_id || selectedEvent.id]);
+        setUserAppliedEvents(prev => [...prev, eventId]);
       }
     } catch (error) {
       console.error('Error sending enrollment request:', error);
@@ -603,6 +885,20 @@ export default function UserDashboard() {
     }
     
     return { displayPrice: originalPrice, isFree: false, discount: 0 };
+  };
+
+  const eventTypeLabels: Record<string, string> = {
+    'concert': '🎵 Concert',
+    'festival': '🎪 Festival',
+    'tech-conference': '💻 Tech Conference',
+    'tech-meetup': '👥 Tech Meetup',
+    'workshop': '🛠️ Workshop',
+    'hackathon': '⚡ Hackathon',
+    'networking': '🤝 Networking',
+    'sports': '⚽ Sports',
+    'exhibition': '🎨 Exhibition',
+    'webinar': '📺 Webinar',
+    'other': '📌 Other'
   };
 
   // Handle payment for paid events
@@ -714,6 +1010,7 @@ export default function UserDashboard() {
       </header>
 
       <ApprovedAdsBar />
+      <AnnouncementBanner />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -1046,6 +1343,16 @@ export default function UserDashboard() {
                               Organized by {event.organizer_name}
                             </p>
                           )}
+                          {event.event_type && (
+                            <Badge variant="outline" className="mt-2 text-xs px-2 py-0.5 border-primary/30 text-primary/80 w-fit">
+                              {eventTypeLabels[event.event_type] || event.event_type}
+                            </Badge>
+                          )}
+                          {!(event as any).is_public && (event as any).is_public !== undefined && (
+                            <Badge className="mt-2 bg-purple-500/20 text-purple-400 border-purple-500/30 px-2 py-0.5 text-xs w-fit">
+                              🔒 Private Invite
+                            </Badge>
+                          )}
                         </div>
                         <div className="flex flex-col gap-2">
                           {(() => {
@@ -1123,9 +1430,7 @@ export default function UserDashboard() {
                             variant="outline"
                             onClick={() => {
                               setSelectedEventForChat(event);
-                              setOrganizerMessages([
-                                { id: 1, sender: 'organizer', name: event.name + ' Team', message: 'Hello! How can we assist you with this event?', timestamp: new Date() }
-                              ]);
+                              loadChatMessages(event);
                               setOrganizerChatOpen(true);
                             }}
                             className="border-primary/30 hover:bg-primary/10 flex items-center justify-center"
@@ -1179,6 +1484,11 @@ export default function UserDashboard() {
                             <span>•</span>
                             <span className="font-mono">Ticket #{ticket.ticket_id || 'N/A'}</span>
                           </div>
+                          {(ticket as any).event_type && (
+                            <Badge variant="outline" className="mt-1 text-[10px] px-1.5 py-0 border-primary/30 text-primary/70 w-fit">
+                              {eventTypeLabels[(ticket as any).event_type] || (ticket as any).event_type}
+                            </Badge>
+                          )}
                         </div>
                         <Badge className={`${ticket.used
                           ? 'bg-red-500/20 text-red-400 border-red-500/30'
@@ -1247,6 +1557,12 @@ export default function UserDashboard() {
                       <Button variant="outline" className="w-full" onClick={() => {
                         setSelectedTicket(ticket);
                         setQrDialogOpen(true);
+                        // Load ticket photo if available
+                        if (ticket.photo_path) {
+                          loadTicketPhoto(ticket);
+                        } else {
+                          setTicketPhotoUrl(null);
+                        }
                       }}>
                         <QrCode className="mr-2 h-4 w-4" />
                         Show QR Code
@@ -1969,9 +2285,18 @@ export default function UserDashboard() {
         </div>
       </main>
 
-      {/* Enrollment Dialog */}
-      <Dialog open={enrollmentOpen} onOpenChange={setEnrollmentOpen}>
-        <DialogContent className="bg-background border-border text-foreground overflow-hidden max-w-md">
+      {/* Enrollment Dialog — Two-Step: Photo → Details */}
+      <Dialog open={enrollmentOpen} onOpenChange={(open) => {
+        if (!open) {
+          // Cleanup on close
+          if (capturedPhoto) URL.revokeObjectURL(capturedPhoto.previewUrl);
+          setCapturedPhoto(null);
+          setEnrollmentStep('photo');
+          setEnrollmentForm({ fullName: '', email: '' });
+        }
+        setEnrollmentOpen(open);
+      }}>
+        <DialogContent className="bg-background border-border text-foreground overflow-hidden max-w-md max-h-[90vh] overflow-y-auto">
           <div className="absolute top-0 left-0 w-full h-1.5 bg-primary" />
           <DialogHeader className="pt-4">
             <DialogTitle className="text-3xl font-bold font-bitcount">
@@ -1990,73 +2315,135 @@ export default function UserDashboard() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="fullName" className="text-white font-bold text-xs uppercase tracking-widest flex items-center mb-1">
-                <UserIcon className="mr-2 h-3.5 w-3.5 text-primary" />
-                Full Name
-              </Label>
-              <Input
-                id="fullName"
-                type="text"
-                placeholder="Enter your full name"
-                value={enrollmentForm.fullName}
-                onChange={(e) => setEnrollmentForm(prev => ({ ...prev, fullName: e.target.value }))}
-                className="bg-card/50 border-border text-white placeholder:text-muted-foreground focus:border-primary/50"
-              />
+          {/* Step indicator */}
+          <div className="flex items-center gap-2 py-2">
+            <div className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest ${enrollmentStep === 'photo' ? 'text-primary' : 'text-muted-foreground'}`}>
+              <Camera className="w-3.5 h-3.5" />
+              <span>1. Photo</span>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-white font-bold text-xs uppercase tracking-widest flex items-center mb-1">
-                <Mail className="mr-2 h-3.5 w-3.5 text-primary" />
-                Email Address
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="Enter your email address"
-                value={enrollmentForm.email}
-                disabled
-                className="bg-card/50 border-border text-white placeholder:text-muted-foreground focus:border-primary/50 opacity-75 cursor-not-allowed"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Using your logged-in account email
-              </p>
-            </div>
-
-            <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mt-4">
-              <p className="text-xs text-primary font-medium flex items-start leading-relaxed">
-                <CheckCircle className="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
-                <span>Your enrollment request will be sent to the organizer for review. If approved, your ticket will appear in "All Tickets" tab.</span>
-              </p>
+            <div className="w-8 h-px bg-border" />
+            <div className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest ${enrollmentStep === 'details' ? 'text-primary' : 'text-muted-foreground'}`}>
+              <UserIcon className="w-3.5 h-3.5" />
+              <span>2. Details</span>
             </div>
           </div>
 
-          <div className="flex gap-3 pt-4">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setEnrollmentOpen(false);
-                setEnrollmentForm({ fullName: '', email: '' });
-              }}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="solid"
-              onClick={handleEnrollmentSubmit}
-              disabled={!enrollmentForm.fullName || !enrollmentForm.email || enrolling}
-              className="flex-1 shadow-glow shadow-primary/20"
-            >
-              {enrolling ? 'Sending Request...' : 'Send Request'}
-            </Button>
-          </div>
+          {enrollmentStep === 'photo' ? (
+            /* Step 1: Camera Capture */
+            <div className="py-2">
+              <CameraCapture
+                isOpen={enrollmentOpen && enrollmentStep === 'photo'}
+                onCapture={handlePhotoCaptured}
+                onClose={() => {
+                  if (capturedPhoto) URL.revokeObjectURL(capturedPhoto.previewUrl);
+                  setCapturedPhoto(null);
+                  setEnrollmentStep('photo');
+                  setEnrollmentOpen(false);
+                }}
+              />
+            </div>
+          ) : (
+            /* Step 2: Details Form */
+            <div className="space-y-4 py-4">
+              {/* Photo preview thumbnail */}
+              {capturedPhoto && (
+                <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 rounded-lg p-3">
+                  <img
+                    src={capturedPhoto.previewUrl}
+                    alt="Your enrollment photo"
+                    className="w-14 h-14 rounded-lg object-cover border border-border"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm text-green-400 font-bold flex items-center gap-1.5">
+                      <CheckCircle className="w-4 h-4" />
+                      Photo Captured
+                    </p>
+                    <button
+                      onClick={handleRetakePhoto}
+                      className="text-xs text-muted-foreground hover:text-primary underline mt-0.5"
+                    >
+                      Retake photo
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="fullName" className="text-white font-bold text-xs uppercase tracking-widest flex items-center mb-1">
+                  <UserIcon className="mr-2 h-3.5 w-3.5 text-primary" />
+                  Full Name
+                </Label>
+                <Input
+                  id="fullName"
+                  type="text"
+                  placeholder="Enter your full name"
+                  value={enrollmentForm.fullName}
+                  onChange={(e) => setEnrollmentForm(prev => ({ ...prev, fullName: e.target.value }))}
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-white font-bold text-xs uppercase tracking-widest flex items-center mb-1">
+                  <Mail className="mr-2 h-3.5 w-3.5 text-primary" />
+                  Email Address
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="Enter your email address"
+                  value={enrollmentForm.email}
+                  disabled
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50 opacity-75 cursor-not-allowed"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Using your logged-in account email
+                </p>
+              </div>
+
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mt-4">
+                <p className="text-xs text-primary font-medium flex items-start leading-relaxed">
+                  <CheckCircle className="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
+                  <span>Your photo will be encrypted and securely stored. The organizer will review your request and photo. If approved, your ticket will appear in "All Tickets" tab.</span>
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (capturedPhoto) URL.revokeObjectURL(capturedPhoto.previewUrl);
+                    setCapturedPhoto(null);
+                    setEnrollmentStep('photo');
+                    setEnrollmentOpen(false);
+                    setEnrollmentForm({ fullName: '', email: '' });
+                  }}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="solid"
+                  onClick={handleEnrollmentSubmit}
+                  disabled={!enrollmentForm.fullName || !enrollmentForm.email || !capturedPhoto || enrolling}
+                  className="flex-1 shadow-glow shadow-primary/20"
+                >
+                  {enrolling ? 'Sending Request...' : 'Send Request'}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
       {/* QR Code Display Dialog */}
-      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+      <Dialog open={qrDialogOpen} onOpenChange={(open) => {
+        setQrDialogOpen(open);
+        if (!open && ticketPhotoUrl) {
+          URL.revokeObjectURL(ticketPhotoUrl);
+          setTicketPhotoUrl(null);
+        }
+      }}>
         <DialogContent className="bg-background border-border text-foreground overflow-y-auto max-h-[90vh] max-w-md sm:max-w-lg">
           <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-primary via-primary/80 to-primary" />
           <DialogHeader className="pt-4 pb-2">
@@ -2117,7 +2504,36 @@ export default function UserDashboard() {
                 <div className="text-center pb-3 border-b border-border/50">
                   <p className="text-xs text-muted-foreground uppercase tracking-widest font-bold mb-2">🎫 Event Information</p>
                   <p className="text-white font-bold text-xl sm:text-2xl leading-tight">{selectedTicket.event_name}</p>
+                  {selectedTicket.event_type && (
+                    <Badge variant="outline" className="mt-2 text-xs px-2 py-0.5 border-primary/30 text-primary/80">
+                      {eventTypeLabels[selectedTicket.event_type] || selectedTicket.event_type}
+                    </Badge>
+                  )}
+                  {selectedTicket.event_description && (
+                    <p className="text-muted-foreground text-xs mt-2 leading-relaxed line-clamp-3">{selectedTicket.event_description}</p>
+                  )}
                 </div>
+
+                {/* Attendee Photo */}
+                {(ticketPhotoUrl || ticketPhotoLoading) && (
+                  <div className="flex flex-col items-center gap-2 pb-3 border-b border-border/50">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold">📸 Attendee Photo</p>
+                    {ticketPhotoLoading ? (
+                      <div className="w-24 h-24 rounded-full bg-muted/50 animate-pulse flex items-center justify-center">
+                        <Camera className="w-8 h-8 text-muted-foreground/30" />
+                      </div>
+                    ) : ticketPhotoUrl ? (
+                      <img 
+                        src={ticketPhotoUrl} 
+                        alt="Attendee" 
+                        className="w-24 h-24 rounded-full object-cover border-2 border-primary/30 shadow-lg"
+                      />
+                    ) : null}
+                    {selectedTicket.attendee_name && (
+                      <p className="text-white text-sm font-medium">{selectedTicket.attendee_name}</p>
+                    )}
+                  </div>
+                )}
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="bg-background/50 p-3 rounded-lg">
@@ -2376,7 +2792,7 @@ export default function UserDashboard() {
                       const premiumFee = '0.0032';
                       const provider = new ethers.BrowserProvider(window.ethereum);
                       const signer = await provider.getSigner();
-                      const organizerAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
+                      const organizerAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0';
                       toast({ title: 'Processing Payment...', description: `Sending ${premiumFee} ETH (₹799) for Premium subscription...` });
                       const tx = await signer.sendTransaction({ to: organizerAddress, value: ethers.parseEther(premiumFee) });
                       toast({ title: 'Payment Pending...', description: 'Waiting for transaction confirmation...' });
@@ -2464,7 +2880,7 @@ export default function UserDashboard() {
                       const goldFee = '0.006';
                       const provider = new ethers.BrowserProvider(window.ethereum);
                       const signer = await provider.getSigner();
-                      const organizerAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
+                      const organizerAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0';
                       toast({ title: 'Processing Payment...', description: `Sending ${goldFee} ETH (₹1,499) for Gold subscription...` });
                       const tx = await signer.sendTransaction({ to: organizerAddress, value: ethers.parseEther(goldFee) });
                       toast({ title: 'Payment Pending...', description: 'Waiting for transaction confirmation...' });
@@ -2695,7 +3111,7 @@ export default function UserDashboard() {
                     }
                     const provider = new ethers.BrowserProvider(window.ethereum);
                     const signer = await provider.getSigner();
-                    const organizerAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
+                    const organizerAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0';
                     toast({ title: 'Processing Payment...', description: `Sending ${adFee} ETH (₹250) for ad request...` });
                     const tx = await signer.sendTransaction({ to: organizerAddress, value: ethers.parseEther(adFee) });
                     toast({ title: 'Payment Pending...', description: 'Waiting for transaction confirmation...' });
@@ -2733,7 +3149,7 @@ export default function UserDashboard() {
         </span>
       </button>
 
-      {/* Support Team Chat Dialog */}
+      {/* Support Team Chat Dialog — Supabase-powered */}
       <Dialog open={chatOpen && chatType === 'support'} onOpenChange={(open) => { if (!open) setChatOpen(false); }}>
         <DialogContent className="max-w-lg max-h-[600px] flex flex-col">
           <DialogHeader>
@@ -2743,117 +3159,60 @@ export default function UserDashboard() {
             </DialogTitle>
             <p className="text-sm text-muted-foreground">Get help from our support team</p>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto space-y-3 py-4 px-2">
-            {!supportAssigned && chatMessages.length === 1 && (
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 mb-3">
-                <p className="text-xs text-yellow-400 flex items-center gap-2">
-                  <Trophy className="h-4 w-4 animate-spin" />
-                  <span>Support team is on the way... Please wait.</span>
-                </p>
+          <div className="flex-1 overflow-y-auto space-y-3 py-4 px-2 min-h-[200px]">
+            {supportChatLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-sm text-muted-foreground">Loading messages...</div>
               </div>
-            )}
-            {chatMessages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] rounded-lg p-3 ${
-                  msg.sender === 'user' 
-                    ? 'bg-primary text-white' 
-                    : 'bg-green-500/10 border border-green-500/30'
-                }`}>
-                  <p className={`text-xs font-semibold mb-1 ${
-                    msg.sender === 'user' ? 'text-white/80' : 'text-green-400'
-                  }`}>
-                    {msg.name}
-                  </p>
-                  <p className="text-sm text-white">{msg.message}</p>
-                  <p className={`text-[10px] mt-1 ${
-                    msg.sender === 'user' ? 'text-white/60' : 'text-muted-foreground'
-                  }`}>
-                    {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </p>
+            ) : supportChatMessages.length === 0 ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-center">
+                  <MessageCircle className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">Send a message to get help from our support team!</p>
                 </div>
               </div>
-            ))}
+            ) : (
+              supportChatMessages.map((msg: any) => (
+                <div key={msg.id} className={`flex ${msg.sender_role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[75%] rounded-lg p-3 ${
+                    msg.sender_role === 'user'
+                      ? 'bg-primary text-white'
+                      : 'bg-green-500/10 border border-green-500/30'
+                  }`}>
+                    <p className={`text-xs font-semibold mb-1 ${
+                      msg.sender_role === 'user' ? 'text-white/80' : 'text-green-400'
+                    }`}>
+                      {msg.sender_role === 'user' ? 'You' : 'Support Team'}
+                    </p>
+                    <p className="text-sm text-white">{msg.message}</p>
+                    <p className={`text-[10px] mt-1 ${
+                      msg.sender_role === 'user' ? 'text-white/60' : 'text-muted-foreground'
+                    }`}>
+                      {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+            <div ref={supportChatEndRef} />
           </div>
           <div className="border-t border-border pt-4 flex gap-2">
             <input
               type="text"
-              value={chatMessage}
-              onChange={(e) => setChatMessage(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === 'Enter' && chatMessage.trim()) {
-                  const newMsg = {
-                    id: chatMessages.length + 1,
-                    sender: 'user',
-                    name: 'You',
-                    message: chatMessage,
-                    timestamp: new Date()
-                  };
-                  setChatMessages([...chatMessages, newMsg]);
-                  setChatMessage('');
-                  
-                  if (!supportAssigned) {
-                    setSupportAssigned(true);
-                    setTimeout(() => {
-                      setChatMessages(prev => [...prev, {
-                        id: prev.length + 1,
-                        sender: 'support',
-                        name: 'Support Team',
-                        message: 'Thank you for reaching out! A support representative has been assigned to help you. How can we assist you today?',
-                        timestamp: new Date()
-                      }]);
-                    }, 2000);
-                  } else {
-                    setTimeout(() => {
-                      setChatMessages(prev => [...prev, {
-                        id: prev.length + 1,
-                        sender: 'support',
-                        name: 'Support Team',
-                        message: 'We\'re looking into this. Thank you for your patience!',
-                        timestamp: new Date()
-                      }]);
-                    }, 1500);
-                  }
+              value={supportChatMessage}
+              onChange={(e) => setSupportChatMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && supportChatMessage.trim()) {
+                  sendSupportChat(supportChatMessage);
                 }
               }}
               placeholder="Type your message..."
               className="flex-1 px-3 py-2 bg-background border border-border rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
             />
             <Button
-              variant="solid"
               onClick={() => {
-                if (chatMessage.trim()) {
-                  const newMsg = {
-                    id: chatMessages.length + 1,
-                    sender: 'user',
-                    name: 'You',
-                    message: chatMessage,
-                    timestamp: new Date()
-                  };
-                  setChatMessages([...chatMessages, newMsg]);
-                  setChatMessage('');
-                  
-                  if (!supportAssigned) {
-                    setSupportAssigned(true);
-                    setTimeout(() => {
-                      setChatMessages(prev => [...prev, {
-                        id: prev.length + 1,
-                        sender: 'support',
-                        name: 'Support Team',
-                        message: 'Thank you for reaching out! A support representative has been assigned to help you. How can we assist you today?',
-                        timestamp: new Date()
-                      }]);
-                    }, 2000);
-                  } else {
-                    setTimeout(() => {
-                      setChatMessages(prev => [...prev, {
-                        id: prev.length + 1,
-                        sender: 'support',
-                        name: 'Support Team',
-                        message: 'We\'re looking into this. Thank you for your patience!',
-                        timestamp: new Date()
-                      }]);
-                    }, 1500);
-                  }
+                if (supportChatMessage.trim()) {
+                  sendSupportChat(supportChatMessage);
                 }
               }}
               className="px-4 bg-green-500 hover:bg-green-600"
@@ -2864,8 +3223,14 @@ export default function UserDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Event Organizer Chat Dialog */}
-      <Dialog open={organizerChatOpen} onOpenChange={setOrganizerChatOpen}>
+      {/* Event Organizer Chat Dialog — Supabase-powered */}
+      <Dialog open={organizerChatOpen} onOpenChange={(open) => {
+        setOrganizerChatOpen(open);
+        if (!open) {
+          setOrganizerMessages([]);
+          setSelectedEventForChat(null);
+        }
+      }}>
         <DialogContent className="max-w-lg max-h-[600px] flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold flex items-center gap-2">
@@ -2874,81 +3239,59 @@ export default function UserDashboard() {
             </DialogTitle>
             <p className="text-sm text-muted-foreground">Chat directly with the event organizer</p>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto space-y-3 py-4 px-2">
-            {organizerMessages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] rounded-lg p-3 ${
-                  msg.sender === 'user' 
-                    ? 'bg-primary text-white' 
-                    : 'bg-purple-500/10 border border-purple-500/30'
-                }`}>
-                  <p className={`text-xs font-semibold mb-1 ${
-                    msg.sender === 'user' ? 'text-white/80' : 'text-purple-400'
-                  }`}>
-                    {msg.name}
-                  </p>
-                  <p className="text-sm text-white">{msg.message}</p>
-                  <p className={`text-[10px] mt-1 ${
-                    msg.sender === 'user' ? 'text-white/60' : 'text-muted-foreground'
-                  }`}>
-                    {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </p>
+          <div className="flex-1 overflow-y-auto space-y-3 py-4 px-2 min-h-[200px]">
+            {orgChatLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-sm text-muted-foreground">Loading messages...</div>
+              </div>
+            ) : organizerMessages.length === 0 ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-center">
+                  <MessageCircle className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No messages yet. Send a message to the organizer!</p>
                 </div>
               </div>
-            ))}
+            ) : (
+              organizerMessages.map((msg) => (
+                <div key={msg.id} className={`flex ${msg.sender_role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[75%] rounded-lg p-3 ${
+                    msg.sender_role === 'user' 
+                      ? 'bg-primary text-white' 
+                      : 'bg-purple-500/10 border border-purple-500/30'
+                  }`}>
+                    <p className={`text-xs font-semibold mb-1 ${
+                      msg.sender_role === 'user' ? 'text-white/80' : 'text-purple-400'
+                    }`}>
+                      {msg.sender_role === 'user' ? 'You' : msg.sender_name}
+                    </p>
+                    <p className="text-sm text-white">{msg.message}</p>
+                    <p className={`text-[10px] mt-1 ${
+                      msg.sender_role === 'user' ? 'text-white/60' : 'text-muted-foreground'
+                    }`}>
+                      {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
           <div className="border-t border-border pt-4 flex gap-2">
             <input
               type="text"
-              value={chatMessage}
-              onChange={(e) => setChatMessage(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === 'Enter' && chatMessage.trim()) {
-                  setOrganizerMessages([...organizerMessages, {
-                    id: organizerMessages.length + 1,
-                    sender: 'user',
-                    name: 'You',
-                    message: chatMessage,
-                    timestamp: new Date()
-                  }]);
-                  setChatMessage('');
-                  setTimeout(() => {
-                    setOrganizerMessages(prev => [...prev, {
-                      id: prev.length + 1,
-                      sender: 'organizer',
-                      name: selectedEventForChat?.name + ' Team',
-                      message: 'Thanks for your question! We\'ll respond shortly.',
-                      timestamp: new Date()
-                    }]);
-                  }, 1500);
+              value={orgChatMessage}
+              onChange={(e) => setOrgChatMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && orgChatMessage.trim()) {
+                  sendOrganizerChat(orgChatMessage);
                 }
               }}
               placeholder="Ask about this event..."
-              className="flex-1 px-3 py-2 bg-background border border-border rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="flex-1 px-3 py-2 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
             <Button
               variant="solid"
-              onClick={() => {
-                if (chatMessage.trim()) {
-                  setOrganizerMessages([...organizerMessages, {
-                    id: organizerMessages.length + 1,
-                    sender: 'user',
-                    name: 'You',
-                    message: chatMessage,
-                    timestamp: new Date()
-                  }]);
-                  setChatMessage('');
-                  setTimeout(() => {
-                    setOrganizerMessages(prev => [...prev, {
-                      id: prev.length + 1,
-                      sender: 'organizer',
-                      name: selectedEventForChat?.name + ' Team',
-                      message: 'Thanks for your question! We\'ll respond shortly.',
-                      timestamp: new Date()
-                    }]);
-                  }, 1500);
-                }
-              }}
+              onClick={() => sendOrganizerChat(orgChatMessage)}
+              disabled={!orgChatMessage.trim()}
               className="px-4 bg-purple-500 hover:bg-purple-600"
             >
               Send

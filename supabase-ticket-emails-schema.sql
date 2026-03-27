@@ -15,19 +15,10 @@ CREATE TABLE IF NOT EXISTS ticket_emails (
 -- If table already exists, add badge_sent column:
 -- ALTER TABLE ticket_emails ADD COLUMN IF NOT EXISTS badge_sent BOOLEAN DEFAULT FALSE;
 
--- Create index for faster lookups
+-- Create indexes for faster lookups
 CREATE INDEX IF NOT EXISTS idx_ticket_emails_recipient ON ticket_emails(recipient_email);
 CREATE INDEX IF NOT EXISTS idx_ticket_emails_event ON ticket_emails(event_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_emails_ticket_id ON ticket_emails(ticket_id);
-
--- Create index on ticket_id for faster queries
-CREATE INDEX idx_ticket_emails_ticket_id ON ticket_emails(ticket_id);
-
--- Create index on recipient_email for faster queries
-CREATE INDEX idx_ticket_emails_recipient_email ON ticket_emails(recipient_email);
-
--- Create index on event_id for faster queries
-CREATE INDEX idx_ticket_emails_event_id ON ticket_emails(event_id);
 
 -- Add comment to table
 COMMENT ON TABLE ticket_emails IS 'Stores records of tickets sent to email addresses';

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -14,7 +14,7 @@ import {
   Shield, MessageCircle, FileText, LogOut, CheckCircle, XCircle, Info,
   Users, Calendar, Ticket as TicketIcon, AlertTriangle, Lock, Activity,
   Eye, TrendingUp, Search, Bell, RefreshCw, ClipboardList, UserSearch,
-  Megaphone, Flag, Clock, Trash2, Mail,
+  Megaphone, Flag, Clock, Trash2, Mail, Send,
 } from 'lucide-react';
 
 interface AdRequest {
@@ -56,6 +56,23 @@ interface TicketLookupResult {
   created_at?: string;
 }
 
+interface SupportChatMessage {
+  id: number;
+  user_email: string;
+  user_name: string;
+  sender_role: 'user' | 'support';
+  message: string;
+  created_at: string;
+}
+
+interface ChatConversation {
+  user_email: string;
+  user_name: string;
+  last_message: string;
+  last_time: string;
+  unread: number;
+}
+
 export default function SupportDashboard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -82,6 +99,14 @@ export default function SupportDashboard() {
   // Event search
   const [eventSearch, setEventSearch] = useState('');
 
+  // Support chat state
+  const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
+  const [selectedChatUser, setSelectedChatUser] = useState<string | null>(null);
+  const [chatMessagesData, setChatMessagesData] = useState<SupportChatMessage[]>([]);
+  const [supportReplyMessage, setSupportReplyMessage] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
   // Auth guard
   useEffect(() => {
     const session = localStorage.getItem('supportSession');
@@ -102,10 +127,26 @@ export default function SupportDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // Load announcements
-  useEffect(() => {
-    try { setAnnouncements(JSON.parse(localStorage.getItem('supportAnnouncements') || '[]')); } catch { /* ignore */ }
-  }, []);
+  // Load announcements from Supabase
+  const fetchAnnouncements = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('support_announcements')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        setAnnouncements(data.map((a: any) => ({
+          id: a.id.toString(),
+          message: a.message,
+          priority: a.priority,
+          createdAt: a.created_at,
+        })));
+      }
+    } catch { /* fallback to localStorage */ 
+      try { setAnnouncements(JSON.parse(localStorage.getItem('supportAnnouncements') || '[]')); } catch { /* ignore */ }
+    }
+  };
+  useEffect(() => { fetchAnnouncements(); }, []);
 
   const fetchStats = async () => {
     setRefreshing(true);
@@ -137,6 +178,93 @@ export default function SupportDashboard() {
     const ch2 = supabase.channel('sup-tickets').on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_emails' }, fetchStats).subscribe();
     return () => { clearInterval(interval); supabase.removeChannel(ch1); supabase.removeChannel(ch2); };
   }, []);
+
+  // Support chat: fetch conversations list
+  const fetchChatConversations = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('support_chat_messages')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      const msgs = data || [];
+      // Group by user_email
+      const grouped: Record<string, SupportChatMessage[]> = {};
+      msgs.forEach((m: SupportChatMessage) => {
+        if (!grouped[m.user_email]) grouped[m.user_email] = [];
+        grouped[m.user_email].push(m);
+      });
+      const convos: ChatConversation[] = Object.entries(grouped).map(([email, messages]) => {
+        const sorted = messages.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        const unread = messages.filter(m => m.sender_role === 'user').length;
+        return {
+          user_email: email,
+          user_name: sorted[0].user_name || 'User',
+          last_message: sorted[0].message,
+          last_time: sorted[0].created_at,
+          unread,
+        };
+      });
+      convos.sort((a, b) => new Date(b.last_time).getTime() - new Date(a.last_time).getTime());
+      setChatConversations(convos);
+    } catch (err) { console.error('Failed to fetch chat conversations:', err); }
+  };
+
+  // Support chat: load messages for selected user
+  const loadChatForUser = async (userEmail: string) => {
+    setSelectedChatUser(userEmail);
+    setChatLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('support_chat_messages')
+        .select('*')
+        .eq('user_email', userEmail)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      setChatMessagesData(data || []);
+    } catch (err) { console.error('Failed to load chat:', err); }
+    finally { setChatLoading(false); }
+  };
+
+  // Support chat: send reply
+  const sendSupportReply = async () => {
+    if (!supportReplyMessage.trim() || !selectedChatUser) return;
+    try {
+      const { error } = await supabase.from('support_chat_messages').insert({
+        user_email: selectedChatUser,
+        user_name: 'Support Team',
+        sender_role: 'support',
+        message: supportReplyMessage.trim(),
+      });
+      if (error) throw error;
+      setSupportReplyMessage('');
+    } catch (err) {
+      toast({ title: 'Send failed', description: 'Could not send message.', variant: 'destructive' });
+    }
+  };
+
+  // Support chat: realtime subscription + initial load
+  useEffect(() => {
+    fetchChatConversations();
+    const channel = supabase
+      .channel('support-chat-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_chat_messages' }, (payload) => {
+        const newMsg = payload.new as SupportChatMessage;
+        // Update conversations list
+        fetchChatConversations();
+        // If this message belongs to the selected conversation, add it
+        if (newMsg.user_email === selectedChatUser) {
+          setChatMessagesData(prev => [...prev, newMsg]);
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [selectedChatUser]);
+
+  // Auto scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessagesData]);
 
   const handleLogout = () => {
     localStorage.removeItem('supportSession');
@@ -189,20 +317,38 @@ export default function SupportDashboard() {
     } finally { setLookupLoading(false); }
   };
 
-  const postAnnouncement = () => {
+  const postAnnouncement = async () => {
     if (!newAnnouncement.trim()) return;
-    const ann: Announcement = { id: Date.now().toString(), message: newAnnouncement.trim(), priority: announcementPriority, createdAt: new Date().toISOString() };
-    const updated = [ann, ...announcements];
-    setAnnouncements(updated);
-    localStorage.setItem('supportAnnouncements', JSON.stringify(updated));
-    setNewAnnouncement('');
-    toast({ title: 'Announcement Posted ðŸ“¢', description: 'It is now visible to the team.' });
+    try {
+      const { error } = await supabase.from('support_announcements').insert({
+        message: newAnnouncement.trim(),
+        priority: announcementPriority,
+        is_active: true,
+      });
+      if (error) throw error;
+      setNewAnnouncement('');
+      fetchAnnouncements();
+      toast({ title: 'Announcement Posted 📢', description: 'It is now visible on the website.' });
+    } catch (err: any) {
+      // Fallback to localStorage
+      const ann: Announcement = { id: Date.now().toString(), message: newAnnouncement.trim(), priority: announcementPriority, createdAt: new Date().toISOString() };
+      const updated = [ann, ...announcements];
+      setAnnouncements(updated);
+      localStorage.setItem('supportAnnouncements', JSON.stringify(updated));
+      setNewAnnouncement('');
+      toast({ title: 'Announcement Posted 📢', description: 'Saved locally (Supabase table may need setup).' });
+    }
   };
 
-  const deleteAnnouncement = (id: string) => {
-    const updated = announcements.filter(a => a.id !== id);
-    setAnnouncements(updated);
-    localStorage.setItem('supportAnnouncements', JSON.stringify(updated));
+  const deleteAnnouncement = async (id: string) => {
+    try {
+      await supabase.from('support_announcements').delete().eq('id', parseInt(id));
+      fetchAnnouncements();
+    } catch {
+      const updated = announcements.filter(a => a.id !== id);
+      setAnnouncements(updated);
+      localStorage.setItem('supportAnnouncements', JSON.stringify(updated));
+    }
   };
 
   const resetTestData = async () => {
@@ -544,7 +690,7 @@ export default function SupportDashboard() {
             <TabsContent value="announcements" className="mt-0 p-6 focus-visible:outline-none">
               <div className="mb-6">
                 <h2 className="text-2xl font-bold text-white flex items-center gap-2"><Megaphone className="h-6 w-6 text-purple-400" />Team Announcements</h2>
-                <p className="text-muted-foreground mt-1">Post notices visible to the support team</p>
+                <p className="text-muted-foreground mt-1">Post notices visible to all users on the website</p>
               </div>
 
               <div className="grid lg:grid-cols-2 gap-6">
@@ -614,75 +760,143 @@ export default function SupportDashboard() {
               </div>
             </TabsContent>
 
-            {/* â”€â”€ SUPPORT CHAT â”€â”€ */}
+            {/* — SUPPORT CHAT — */}
             <TabsContent value="chat" className="mt-0 p-6 focus-visible:outline-none">
               <div className="mb-6">
                 <h2 className="text-2xl font-bold text-white flex items-center gap-2"><MessageCircle className="h-6 w-6 text-green-400" />Support Chat Center</h2>
-                <p className="text-muted-foreground mt-1">Manage support requests from users in real-time</p>
+                <p className="text-muted-foreground mt-1">Respond to user support messages in real-time</p>
               </div>
               <div className="grid lg:grid-cols-3 gap-6">
+                {/* Conversation List */}
                 <Card className="bg-background/50 border-border">
-                  <CardHeader className="bg-green-500/5 border-b border-border/50"><CardTitle className="text-white flex items-center gap-2 text-base"><Users className="h-4 w-4 text-green-400" />User Contacts</CardTitle></CardHeader>
-                  <CardContent className="p-4">
-                    {adRequests.length === 0 ? (
+                  <CardHeader className="bg-green-500/5 border-b border-border/50">
+                    <CardTitle className="text-white flex items-center gap-2 text-base">
+                      <Users className="h-4 w-4 text-green-400" />Conversations ({chatConversations.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-2">
+                    {chatConversations.length === 0 ? (
                       <div className="text-center py-12">
                         <MessageCircle className="h-14 w-14 text-muted-foreground/20 mx-auto mb-4" />
-                        <p className="text-muted-foreground text-sm">No contacts yet</p>
-                        <p className="text-xs text-muted-foreground mt-2">Ad requesters will appear here</p>
+                        <p className="text-muted-foreground text-sm">No messages yet</p>
+                        <p className="text-xs text-muted-foreground mt-2">User messages will appear here</p>
                       </div>
                     ) : (
-                      <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
-                        {adRequests.map(ad => (
-                          <div key={ad.id} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-green-500/5 border border-green-500/10 hover:border-green-500/30 transition-all">
-                            <div className="flex items-center gap-2 min-w-0">
+                      <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                        {chatConversations.map(convo => (
+                          <button
+                            key={convo.user_email}
+                            onClick={() => loadChatForUser(convo.user_email)}
+                            className={`w-full text-left p-3 rounded-lg transition-all ${
+                              selectedChatUser === convo.user_email
+                                ? 'bg-green-500/10 border border-green-500/30'
+                                : 'hover:bg-muted/50 border border-transparent'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
                               <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
-                                <span className="text-green-400 font-bold text-sm">{ad.business_name.charAt(0).toUpperCase()}</span>
+                                <span className="text-green-400 font-bold text-sm">{convo.user_name.charAt(0).toUpperCase()}</span>
                               </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-semibold text-white truncate">{ad.business_name}</p>
-                                <p className="text-xs text-muted-foreground truncate">{ad.contact_email}</p>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-sm font-semibold text-white truncate">{convo.user_name}</p>
+                                  <span className="text-[10px] text-muted-foreground shrink-0">
+                                    {new Date(convo.last_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-muted-foreground truncate">{convo.user_email}</p>
+                                <p className="text-xs text-muted-foreground truncate mt-0.5">{convo.last_message}</p>
                               </div>
                             </div>
-                            <a
-                              href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(ad.contact_email)}&su=${encodeURIComponent('Regarding Your Ad Request - ' + ad.business_name)}&body=${encodeURIComponent('Hi,\n\nThank you for your advertising request for ' + ad.business_name + '.\n\nWe wanted to reach out regarding your submission.\n\nBest regards,\nBlockTix Support Team')}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-bold shrink-0" title={`Email ${ad.contact_email}`}>
-                                <Mail className="h-3 w-3 mr-1" />Email
-                              </Button>
-                            </a>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     )}
                   </CardContent>
                 </Card>
+
+                {/* Chat Messages */}
                 <div className="lg:col-span-2">
                   <Card className="bg-background/50 border-border h-[460px] flex flex-col">
-                    <CardHeader className="bg-green-500/5 border-b border-border/50">
+                    <CardHeader className="bg-green-500/5 border-b border-border/50 py-3">
                       <CardTitle className="text-white flex items-center justify-between text-base">
-                        <div className="flex items-center gap-2"><MessageCircle className="h-4 w-4 text-green-400" />Support Chat</div>
-                        <Badge className="bg-green-500/10 text-green-400 border-green-500/30 animate-pulse text-xs">â— Online</Badge>
+                        <div className="flex items-center gap-2">
+                          <MessageCircle className="h-4 w-4 text-green-400" />
+                          {selectedChatUser ? (
+                            <span>{chatConversations.find(c => c.user_email === selectedChatUser)?.user_name || selectedChatUser}</span>
+                          ) : (
+                            <span>Support Chat</span>
+                          )}
+                        </div>
+                        <Badge className="bg-green-500/10 text-green-400 border-green-500/30 animate-pulse text-xs">● Online</Badge>
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="flex-1 flex items-center justify-center">
-                      <div className="text-center">
-                        <MessageCircle className="h-16 w-16 text-muted-foreground/10 mx-auto mb-4" />
-                        <p className="text-lg font-semibold text-white mb-1">No conversation selected</p>
-                        <p className="text-sm text-muted-foreground">Select a chat from the left to start responding</p>
-                      </div>
-                    </CardContent>
+                    {!selectedChatUser ? (
+                      <CardContent className="flex-1 flex items-center justify-center">
+                        <div className="text-center">
+                          <MessageCircle className="h-16 w-16 text-muted-foreground/10 mx-auto mb-4" />
+                          <p className="text-lg font-semibold text-white mb-1">No conversation selected</p>
+                          <p className="text-sm text-muted-foreground">Select a user from the left to start responding</p>
+                        </div>
+                      </CardContent>
+                    ) : (
+                      <>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                          {chatLoading ? (
+                            <div className="flex items-center justify-center py-8">
+                              <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : chatMessagesData.length === 0 ? (
+                            <div className="text-center py-8">
+                              <p className="text-sm text-muted-foreground">No messages yet</p>
+                            </div>
+                          ) : (
+                            chatMessagesData.map(msg => (
+                              <div key={msg.id} className={`flex ${msg.sender_role === 'support' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[75%] rounded-lg p-3 ${
+                                  msg.sender_role === 'support'
+                                    ? 'bg-green-600 text-white'
+                                    : 'bg-muted border border-border'
+                                }`}>
+                                  <p className={`text-xs font-semibold mb-1 ${
+                                    msg.sender_role === 'support' ? 'text-green-100' : 'text-muted-foreground'
+                                  }`}>
+                                    {msg.sender_role === 'support' ? 'Support Team' : msg.user_name}
+                                  </p>
+                                  <p className="text-sm">{msg.message}</p>
+                                  <p className={`text-[10px] mt-1 ${
+                                    msg.sender_role === 'support' ? 'text-green-200/60' : 'text-muted-foreground'
+                                  }`}>
+                                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                          <div ref={chatEndRef} />
+                        </div>
+                        <div className="border-t border-border p-3 flex gap-2">
+                          <Input
+                            value={supportReplyMessage}
+                            onChange={e => setSupportReplyMessage(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter' && supportReplyMessage.trim()) sendSupportReply(); }}
+                            placeholder="Type your reply..."
+                            className="flex-1 bg-muted border-border text-white placeholder:text-muted-foreground/50"
+                          />
+                          <Button
+                            onClick={sendSupportReply}
+                            disabled={!supportReplyMessage.trim()}
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                          >
+                            <Send className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </>
+                    )}
                   </Card>
                 </div>
               </div>
-              <div className="grid md:grid-cols-4 gap-4 mt-6">
-                {[{ label: 'Total Events', value: stats.totalEvents, color: 'border-green-500/20 bg-green-500/5' }, { label: 'Tickets Minted', value: stats.totalTickets, color: 'border-blue-500/20 bg-blue-500/5' }, { label: 'Tickets Used', value: stats.ticketsUsed, color: 'border-amber-500/20 bg-amber-500/5' }, { label: 'Revenue', value: `${stats.totalRevenue.toFixed(4)} ETH`, color: 'border-purple-500/20 bg-purple-500/5' }].map(s => (
-                  <Card key={s.label} className={`${s.color} border`}><CardContent className="p-4 text-center"><p className="text-xl font-bold text-white">{s.value}</p><p className="text-xs text-muted-foreground uppercase mt-1">{s.label}</p></CardContent></Card>
-                ))}
-              </div>
             </TabsContent>
-
             {/* â”€â”€ SECURITY â”€â”€ */}
             <TabsContent value="security" className="mt-0 p-6 focus-visible:outline-none">
               <div className="mb-6">
