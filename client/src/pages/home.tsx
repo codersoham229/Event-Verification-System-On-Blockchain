@@ -137,6 +137,26 @@ export default function Home() {
   const [adRequests, setAdRequests] = useState<any[]>([]);
   const [activeSidebarSection, setActiveSidebarSection] = useState('tabs');
 
+  // Sepolia guide — mandatory, show until organizer checks the box
+  const [sepoliaGuideOpen, setSepoliaGuideOpen] = useState(() =>
+    localStorage.getItem('sepoliaGuideDismissed_v2') !== 'true'
+  );
+  const [sepoliaGuideChecked, setSepoliaGuideChecked] = useState(false);
+  const dismissSepoliaGuide = () => {
+    if (!sepoliaGuideChecked) return;
+    localStorage.setItem('sepoliaGuideDismissed_v2', 'true');
+    setSepoliaGuideOpen(false);
+  };
+
+  // Ticket price: INR ↔ ETH conversion (1 ETH ≈ ₹2,00,000 for Sepolia testing)
+  const ETH_TO_INR = 200000;
+  const [ticketPriceInr, setTicketPriceInr] = useState('');
+  const handleInrChange = (inr: string) => {
+    setTicketPriceInr(inr);
+    const eth = inr ? (parseFloat(inr) / ETH_TO_INR).toFixed(6) : '';
+    setEventForm(prev => ({ ...prev, ticketPrice: eth }));
+  };
+
   // Photo viewer state for enrollment requests
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const [photoViewerData, setPhotoViewerData] = useState<{
@@ -146,6 +166,9 @@ export default function Home() {
     requesterName: string;
   }>({ photoPath: null, encryptionKey: null, encryptionIv: null, requesterName: '' });
 
+  // Inline photo thumbnails: map of request.id -> { url, loading }
+  const [inlinePhotos, setInlinePhotos] = useState<Map<number, { url: string | null; loading: boolean }>>(new Map());
+
   // Organizer Chat Inbox
   const [chatConversations, setChatConversations] = useState<any[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<{ event_id: number; sender_email: string; event_name: string; sender_name: string } | null>(null);
@@ -154,6 +177,10 @@ export default function Home() {
   const [conversationMessages, setConversationMessages] = useState<any[]>([]);
   const [orgReplyMessage, setOrgReplyMessage] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [conversationMessages]);
   
   // Organizer live stats
   const [orgStats, setOrgStats] = useState({
@@ -348,9 +375,33 @@ export default function Home() {
 
       if (data) {
         setEnrollmentRequests(data);
+        // Auto-load inline photos for all requests that have a photo
+        data.forEach((req: any) => {
+          if (req.has_photo && req.photo_path && req.photo_encryption_key && req.photo_encryption_iv) {
+            loadInlinePhoto(req.id, req.photo_path, req.photo_encryption_key, req.photo_encryption_iv);
+          }
+        });
       }
     } catch (error) {
       console.error('Error fetching enrollment requests:', error);
+    }
+  };
+
+  // Load a photo and store it for inline display in a request card
+  const loadInlinePhoto = async (requestId: number, photoPath: string, encKey: string, encIv: string) => {
+    setInlinePhotos(prev => new Map(prev).set(requestId, { url: null, loading: true }));
+    try {
+      const { data, error } = await supabase.storage
+        .from('enrollment-photos')
+        .download(photoPath);
+      if (error || !data) throw error || new Error('Download failed');
+      const { decryptPhoto } = await import('@/lib/photo-encryption');
+      const decrypted = await decryptPhoto(data, encKey, encIv);
+      const url = URL.createObjectURL(decrypted);
+      setInlinePhotos(prev => new Map(prev).set(requestId, { url, loading: false }));
+    } catch (err) {
+      console.error('Failed to load inline photo for request', requestId, err);
+      setInlinePhotos(prev => new Map(prev).set(requestId, { url: null, loading: false }));
     }
   };
 
@@ -874,46 +925,49 @@ export default function Home() {
       // IMPORTANT: Use blockchain event ID as Supabase ID so ticket_emails.event_id matches
       try {
         const blockchainId = parseInt(result.eventId);
-        // Try insert with explicit blockchain ID first
-        const { error: insertErr } = await supabase
-          .from('events')
-          .insert({
-            id: blockchainId,
-            name: eventForm.name,
-            description: eventForm.description,
-            date: eventForm.date.toISOString(),
-            location: eventForm.location || 'Location TBA',
-            total_tickets: parseInt(eventForm.maxTickets),
-            available_tickets: parseInt(eventForm.maxTickets),
-            price: eventForm.ticketPrice,
-            organizer_address: walletState.address,
-            transaction_hash: result.transactionHash,
-            is_public: eventForm.isPublic,
-            event_type: eventForm.eventType || 'other'
-          });
+        const organizerName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Organizer';
+
+        const payload = {
+          id: blockchainId,
+          name: eventForm.name,
+          description: eventForm.description,
+          date: eventForm.date.toISOString(),
+          location: eventForm.location || 'Location TBA',
+          total_tickets: parseInt(eventForm.maxTickets),
+          available_tickets: parseInt(eventForm.maxTickets),
+          price: eventForm.ticketPrice,
+          organizer_address: walletState.address,
+          organizer_name: organizerName,
+          organizer_email: user?.email || '',
+          transaction_hash: result.transactionHash,
+          is_public: eventForm.isPublic,
+          is_active: true,
+          event_type: eventForm.eventType || 'other'
+        };
+
+        const { error: insertErr } = await supabase.from('events').insert(payload);
 
         if (insertErr) {
-          // If explicit ID fails (e.g. conflict), fall back to auto-increment
-          const { error: fallbackErr } = await supabase
-            .from('events')
-            .insert({
-              name: eventForm.name,
-              description: eventForm.description,
-              date: eventForm.date.toISOString(),
-              location: eventForm.location || 'Location TBA',
-              total_tickets: parseInt(eventForm.maxTickets),
-              available_tickets: parseInt(eventForm.maxTickets),
-              price: eventForm.ticketPrice,
-              organizer_address: walletState.address,
-              transaction_hash: result.transactionHash,
-              is_public: eventForm.isPublic,
-              event_type: eventForm.eventType || 'other'
-            });
-          if (fallbackErr) console.log('Note: Event sync skipped:', fallbackErr.message);
+          console.error('Supabase event sync failed:', insertErr.message, insertErr.details, insertErr.hint);
+          toast({
+            title: '⚠️ Event NOT visible to users yet',
+            description: `Blockchain save succeeded (ID: ${result.eventId}), but database sync failed: ${insertErr.message}. Run fix-events-table.sql in Supabase SQL Editor.`,
+            variant: 'destructive',
+          });
+        } else {
+          toast({
+            title: '✅ Event Published!',
+            description: `"${eventForm.name}" is now live and visible to all users.`,
+          });
         }
         fetchOrgStats();
-      } catch (err) {
-        console.log('Note: Event sync skipped');
+      } catch (err: any) {
+        console.error('Event sync error:', err);
+        toast({
+          title: '⚠️ Event Sync Error',
+          description: `DB sync failed: ${err?.message || 'Unknown error'}. Run fix-events-table.sql in Supabase.`,
+          variant: 'destructive',
+        });
       }
 
       // Send invites for private events
@@ -1084,138 +1138,153 @@ export default function Home() {
   };
 
   // Handle ticket verification
-  const handleVerifyTicket = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const [verifying, setVerifying] = useState(false);
+  const [verifiedHash, setVerifiedHash] = useState<string | null>(null);
 
-    // Access control: allow organizer wallet OR a volunteer email they added
-    if (verifyForm.eventId) {
-      try {
-        const { data: eventRecord } = await supabase
-          .from('events')
-          .select('organizer_address')
-          .eq('id', parseInt(verifyForm.eventId))
-          .maybeSingle();
+  // Core verification logic — called by both form submit and QR scan
+  const runVerification = async (eventId: string, ticketId: string) => {
+    if (!eventId || !ticketId) return;
+    setVerifying(true);
+    setVerifiedHash(null);
+    setVerificationResult(null);
 
-        if (eventRecord && eventRecord.organizer_address) {
-          const isOrganizer = eventRecord.organizer_address.toLowerCase() === walletState.address?.toLowerCase();
-          const storedVolunteers: string[] = (() => {
-            try { return JSON.parse(localStorage.getItem(`volunteers_${verifyForm.eventId}`) || '[]'); } catch { return []; }
-          })();
-          const isVolunteer = user?.email && storedVolunteers.includes(user.email.toLowerCase());
+    // Access control check
+    try {
+      const { data: eventRecord } = await supabase
+        .from('events')
+        .select('organizer_address')
+        .eq('id', parseInt(eventId))
+        .maybeSingle();
 
-          if (!isOrganizer && !isVolunteer) {
-            toast({
-              title: 'Access Denied 🔒',
-              description: 'Only the event organizer or an authorized volunteer can verify tickets for this event.',
-              variant: 'destructive',
-            });
-            return;
-          }
+      if (eventRecord?.organizer_address) {
+        const isOrganizer = eventRecord.organizer_address.toLowerCase() === walletState.address?.toLowerCase();
+        const storedVolunteers: string[] = (() => {
+          try { return JSON.parse(localStorage.getItem(`volunteers_${eventId}`) || '[]'); } catch { return []; }
+        })();
+        const isVolunteer = user?.email && storedVolunteers.includes(user.email.toLowerCase());
+
+        if (!isOrganizer && !isVolunteer) {
+          toast({
+            title: 'Access Denied 🔒',
+            description: 'Only the event organizer or an authorized volunteer can verify tickets for this event.',
+            variant: 'destructive',
+          });
+          setVerifying(false);
+          return;
         }
-      } catch {
-        // DB lookup failed — proceed (handles newly created events)
       }
-    }
+    } catch { /* proceed if DB lookup fails */ }
 
-    // Verify against Supabase DB (instant, no blockchain tx needed — verifyTicket is view-only
-    // but RPC is slow/unreliable; DB is the source of truth for tickets minted through this app)
     try {
       const { data: ticketRecord, error: dbErr } = await supabase
         .from('ticket_emails')
         .select('*')
-        .eq('ticket_id', verifyForm.ticketId)
-        .eq('event_id', parseInt(verifyForm.eventId))
+        .eq('ticket_id', ticketId)
+        .eq('event_id', parseInt(eventId))
         .maybeSingle();
 
       if (dbErr) throw dbErr;
 
       if (ticketRecord) {
         const isUsed = ticketRecord.status === 'used';
-        const result = {
+        const hash = ticketRecord.unique_hash || null;
+        setVerifiedHash(hash);
+        setBadgeSent(ticketRecord.badge_sent === true);
+        setVerificationResult({
           valid: true,
           owner: ticketRecord.recipient_email || '',
-          attendeeName: ticketRecord.recipient_email || 'Ticket Holder',
+          attendeeName: ticketRecord.attendee_name || ticketRecord.recipient_email || 'Ticket Holder',
           isUsed,
-        };
-        setBadgeSent(ticketRecord.badge_sent === true);
-        setVerificationResult({ ...result, event: undefined });
+          event: undefined,
+        });
         toast({
           title: isUsed ? 'Ticket Already Used ⚠️' : 'Ticket Valid ✅',
           description: isUsed
-            ? `This ticket for ${result.attendeeName} has already been used for entry.`
-            : `Verified for ${result.attendeeName}`,
+            ? `This ticket has already been used for entry.`
+            : `Verified: ${ticketRecord.attendee_name || ticketRecord.recipient_email}`,
           variant: isUsed ? 'destructive' : 'default',
         });
       } else {
         setVerificationResult({ valid: false, owner: '', attendeeName: '', isUsed: false, event: undefined });
-        toast({
-          title: 'Invalid Ticket ❌',
-          description: 'This ticket ID was not found for this event.',
-          variant: 'destructive',
-        });
+        toast({ title: 'Invalid Ticket ❌', description: 'This ticket was not found for this event.', variant: 'destructive' });
       }
     } catch (err) {
-      console.error('Verification DB error:', err);
-      toast({
-        title: 'Verification Error',
-        description: 'Could not reach the database. Please try again.',
-        variant: 'destructive',
-      });
+      console.error('Verification error:', err);
+      toast({ title: 'Verification Error', description: 'Could not reach the database. Please try again.', variant: 'destructive' });
+    } finally {
+      setVerifying(false);
+      fetchOrgStats();
     }
+  };
 
-    fetchOrgStats();
+  const handleVerifyTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await runVerification(verifyForm.eventId, verifyForm.ticketId);
   };
 
   // Handle QR scan — supports URL format and legacy event: format
   const handleQRScan = (data: string) => {
     try {
       // NEW FORMAT: compact JSON — {"v":1,"eid":"1","tid":"2","n":"Event",...}
-      // This is server-independent, works from any device without IP address config.
       try {
         const parsed = JSON.parse(data);
         if (parsed.eid) {
+          const eid = String(parsed.eid);
+          const tid = String(parsed.tid || '');
           if (qrScanType === 'event') {
-            setTicketForm(prev => ({ ...prev, eventId: String(parsed.eid) }));
+            setTicketForm(prev => ({ ...prev, eventId: eid }));
           } else if (qrScanType === 'verify') {
-            setVerifyForm(prev => ({ ...prev, eventId: String(parsed.eid), ticketId: String(parsed.tid || '') }));
+            setVerifyForm(prev => ({ ...prev, eventId: eid, ticketId: tid }));
+            setIsQRScannerOpen(false);
+            setActiveTab('verify');
+            toast({ title: 'QR Scanned — Verifying...', description: `Event: ${parsed.n || eid} · Ticket: ${tid}` });
+            runVerification(eid, tid);
           }
           setIsQRScannerOpen(false);
-          toast({ title: 'QR Scanned ✅', description: `Event: ${parsed.n || parsed.eid}` });
           return;
         }
-      } catch { /* not JSON — fall through to URL / legacy formats */ }
+      } catch { /* not JSON — fall through */ }
 
-      // LEGACY: verify-ticket URL (e.g. http://localhost:5000/verify-ticket?eventId=1&ticketId=2)
+      // LEGACY: verify-ticket URL
       if (data.includes('verify-ticket')) {
         const qs = data.includes('?') ? data.split('?')[1] : '';
         const qp = new URLSearchParams(qs);
-        const eid = qp.get('eventId');
-        const tid = qp.get('ticketId');
-        if (eid && qrScanType === 'event') {
+        const eid = qp.get('eventId') || '';
+        const tid = qp.get('ticketId') || '';
+        if (qrScanType === 'event' && eid) {
           setTicketForm(prev => ({ ...prev, eventId: eid }));
-        } else if (eid && tid && qrScanType === 'verify') {
+        } else if (qrScanType === 'verify' && eid && tid) {
           setVerifyForm(prev => ({ ...prev, eventId: eid, ticketId: tid }));
+          setIsQRScannerOpen(false);
+          setActiveTab('verify');
+          toast({ title: 'QR Scanned — Verifying...', description: `Event ${eid} · Ticket ${tid}` });
+          runVerification(eid, tid);
+          return;
         }
         setIsQRScannerOpen(false);
         toast({ title: 'QR Code Scanned', description: 'Form filled from ticket QR code.' });
         return;
       }
 
-      // Legacy format: "event:12345" or "event:12345:ticket:67890:wallet:0xABC"
+      // Legacy format: "event:12345:ticket:67890:wallet:0xABC"
       if (data.startsWith('event:')) {
         const parts = data.split(':');
+        const eid = parts[1] || '';
+        const tid = parts[3] || '';
         if (qrScanType === 'event') {
-          setTicketForm(prev => ({ ...prev, eventId: parts[1] }));
+          setTicketForm(prev => ({ ...prev, eventId: eid }));
         } else if (qrScanType === 'verify') {
-          setVerifyForm(prev => ({
-            ...prev,
-            eventId: parts[1],
-            ticketId: parts[3] || '',
-            walletAddress: parts[5] || ''
-          }));
+          setVerifyForm(prev => ({ ...prev, eventId: eid, ticketId: tid, walletAddress: parts[5] || '' }));
+          setIsQRScannerOpen(false);
+          setActiveTab('verify');
+          if (eid && tid) {
+            toast({ title: 'QR Scanned — Verifying...', description: `Event ${eid}` });
+            runVerification(eid, tid);
+          }
+          return;
         }
         setIsQRScannerOpen(false);
-        toast({ title: 'QR Code Scanned', description: 'Data has been filled in the form.' });
+        toast({ title: 'QR Code Scanned', description: 'Data filled in the form.' });
         return;
       }
 
@@ -1402,7 +1471,105 @@ export default function Home() {
         </div>
 
         {/* Navigation Tabs — hidden on mobile (bottom nav handles it), shown sm+ */}
-        <Card className="mb-4 sm:mb-8 bg-card/50 backdrop-blur-lg border-border">
+
+        {/* ── Sepolia Guide Banner ── shows once until dismissed ── */}
+        {sepoliaGuideOpen && (
+          <div className="mb-5 relative rounded-xl border border-blue-500/40 bg-gradient-to-br from-blue-950/80 via-blue-900/60 to-blue-950/80 backdrop-blur-sm overflow-hidden shadow-xl shadow-blue-500/10">
+            {/* top accent */}
+            <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-cyan-400 to-blue-500" />
+            <div className="p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-xl bg-blue-500/20 border border-blue-500/30 flex-shrink-0 mt-0.5">
+                    <Shield className="h-5 w-5 text-blue-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-white font-bold text-base flex items-center gap-2 mb-1">
+                      🔷 What is Sepolia Testnet ETH &amp; Why Do You Need It?
+                      <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest">Read Once</span>
+                    </h3>
+                    <p className="text-blue-200/80 text-sm leading-relaxed mb-4">
+                      This platform runs on the <strong className="text-white">Ethereum Sepolia Testnet</strong> — a safe testing network that mirrors the real Ethereum blockchain.
+                      Every action (creating events, minting tickets, approving enrollments) is a <strong className="text-white">blockchain transaction</strong> and requires a tiny fee called <strong className="text-white">gas</strong>, paid in <strong className="text-white">Sepolia ETH (SepoliaETH)</strong>.
+                      It's <strong className="text-cyan-400">free and has no real monetary value</strong> — it only exists for testing.
+                    </p>
+                    <div className="grid sm:grid-cols-3 gap-3 mb-4">
+                      <div className="bg-white/5 rounded-lg p-3 border border-blue-500/20">
+                        <p className="text-xs text-blue-400 font-bold uppercase tracking-wider mb-1">Step 1 — Install MetaMask</p>
+                        <p className="text-xs text-white/80">Download MetaMask from <a href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">metamask.io</a>. Create a wallet and save your seed phrase securely.</p>
+                      </div>
+                      <div className="bg-white/5 rounded-lg p-3 border border-blue-500/20">
+                        <p className="text-xs text-blue-400 font-bold uppercase tracking-wider mb-1">Step 2 — Switch to Sepolia</p>
+                        <p className="text-xs text-white/80">In MetaMask → Network dropdown → <strong className="text-white">Show test networks</strong> → Select <strong className="text-white">Sepolia</strong>. Or click "Connect Wallet" on this page — it will prompt you automatically.</p>
+                      </div>
+                      <div className="bg-white/5 rounded-lg p-3 border border-blue-500/20">
+                        <p className="text-xs text-blue-400 font-bold uppercase tracking-wider mb-1">Step 3 — Get Free Testnet ETH</p>
+                        <p className="text-xs text-white/80">
+                          Visit a faucet and paste your wallet address:
+                          <br />
+                          <a href="https://sepoliafaucet.com" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">sepoliafaucet.com</a>
+                          {' · '}
+                          <a href="https://faucet.quicknode.com/ethereum/sepolia" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">QuickNode</a>
+                          {' · '}
+                          <a href="https://faucets.chain.link/sepolia" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">Chainlink</a>
+                          <br />
+                          You'll receive ~0.5 ETH free within seconds.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-3 text-xs">
+                      <div className="flex items-center gap-1.5 bg-green-500/10 text-green-400 border border-green-500/20 px-3 py-1.5 rounded-lg">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        <span>Creating an event costs ~0.001–0.005 SepoliaETH</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-green-500/10 text-green-400 border border-green-500/20 px-3 py-1.5 rounded-lg">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        <span>Minting a ticket costs ~0.001–0.003 SepoliaETH</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1.5 rounded-lg">
+                        <Shield className="h-3.5 w-3.5" />
+                        <span>SepoliaETH has NO real value — it's purely for testing</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mt-4 pt-4 border-t border-blue-500/20">
+                <label className="flex items-center gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={sepoliaGuideChecked}
+                    onChange={(e) => setSepoliaGuideChecked(e.target.checked)}
+                    className="w-4 h-4 rounded accent-blue-400 cursor-pointer"
+                  />
+                  <span className="text-sm text-blue-200">
+                    I have read and understood the guide above
+                  </span>
+                </label>
+                <button
+                  onClick={dismissSepoliaGuide}
+                  disabled={!sepoliaGuideChecked}
+                  className={`text-xs px-5 py-2 rounded-lg font-bold transition-all border ${
+                    sepoliaGuideChecked
+                      ? 'bg-blue-500 hover:bg-blue-600 text-white border-blue-400 cursor-pointer'
+                      : 'bg-blue-500/10 text-blue-500/40 border-blue-500/20 cursor-not-allowed'
+                  }`}
+                >
+                  ✓ Understood — Continue to Dashboard
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <Card className={`mb-4 sm:mb-8 bg-card/50 backdrop-blur-lg border-border relative ${sepoliaGuideOpen ? 'pointer-events-none opacity-40 select-none' : ''}`}>
+          {sepoliaGuideOpen && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl">
+              <p className="text-sm text-blue-400 font-semibold bg-blue-950/80 px-4 py-2 rounded-lg border border-blue-500/30">
+                ↑ Please read and acknowledge the guide above first
+              </p>
+            </div>
+          )}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-4 bg-transparent p-0">
               <TabsTrigger
@@ -1458,7 +1625,7 @@ export default function Home() {
                       <Calendar className="w-5 h-5 text-primary" />
                       <span>Create New Event</span>
                     </CardTitle>
-                    <p className="text-muted-foreground">Deploy your event to the blockchain ...</p>
+                    <p className="text-muted-foreground">Fill in the details below and publish your event — it takes just a minute!</p>
                   </CardHeader>
                   <CardContent className="pt-6">
                     {/* Contract status notice */}
@@ -1612,17 +1779,31 @@ export default function Home() {
                       </div>
 
                       <div>
-                        <Label htmlFor="ticketPrice">Ticket Price (ETH)</Label>
-                        <Input
-                          id="ticketPrice"
-                          type="number"
-                          step="0.001"
-                          value={eventForm.ticketPrice}
-                          onChange={(e) => setEventForm(prev => ({ ...prev, ticketPrice: e.target.value }))}
-                          placeholder="0.001"
-                          required
-                          data-testid="input-ticket-price"
-                        />
+                        <Label htmlFor="ticketPriceInr">Ticket Price (₹ Rupees)</Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">₹</span>
+                          <Input
+                            id="ticketPriceInr"
+                            type="number"
+                            step="1"
+                            min="0"
+                            value={ticketPriceInr}
+                            onChange={(e) => handleInrChange(e.target.value)}
+                            placeholder="e.g. 200"
+                            required
+                            className="pl-7"
+                            data-testid="input-ticket-price"
+                          />
+                        </div>
+                        {ticketPriceInr && (
+                          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                            <span className="text-blue-400 font-mono">≈ {eventForm.ticketPrice} SepoliaETH</span>
+                            <span className="text-muted-foreground/60">· (used on blockchain)</span>
+                          </p>
+                        )}
+                        {!ticketPriceInr && (
+                          <p className="text-xs text-muted-foreground/60 mt-1">Enter ₹0 for a free event. 0.001 ETH ≈ ₹200</p>
+                        )}
                       </div>
 
                       <div>
@@ -1704,8 +1885,9 @@ export default function Home() {
                         data-testid="button-create-event"
                       >
                         <Calendar className="w-4 h-4 mr-2" />
-                        Deploy Event to Blockchain
+                        Publish &amp; Register Event
                       </Button>
+                      <p className="text-center text-[11px] text-muted-foreground/60">This saves your event securely on the blockchain — MetaMask will ask you to confirm</p>
                     </form>
 
                     {transactionStatus.status !== 'idle' && activeTab === 'create' && (
@@ -1729,10 +1911,11 @@ export default function Home() {
                           <strong className="text-white">How to Create an Event:</strong><br/>
                           1. Fill in all event details (name, description, location)<br/>
                           2. Select the event date and time<br/>
-                          3. Set ticket price in ETH and maximum ticket capacity<br/>
-                          4. Choose event visibility (Public/Private)<br/>
-                          5. Click "Deploy Event to Blockchain" and confirm the MetaMask transaction<br/>
-                          6. Your event will appear on all registered users' dashboards
+                          3. Set ticket price in ₹ Rupees (we convert it to ETH for you)<br/>
+                          4. Set the maximum number of tickets available<br/>
+                          5. Choose event visibility (Public/Private)<br/>
+                          6. Click <strong className="text-white">"Publish &amp; Register Event"</strong> and confirm in MetaMask<br/>
+                          7. Your event will appear on all users' dashboards instantly
                         </AlertDescription>
                       </Alert>
                     </CardContent>
@@ -1815,23 +1998,36 @@ export default function Home() {
                   </CardHeader>
                   <CardContent className="pt-6">
                     {/* QR Scanner Section */}
-                    <div className="border-2 border-dashed border-border/60 rounded-lg p-8 text-center mb-6 bg-muted/20 group hover:border-primary/50 transition-colors">
-                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20 group-hover:bg-primary/20 transition-colors">
-                        <Camera className="w-8 h-8 text-primary" />
+                    <div className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 bg-muted/20 group transition-colors ${verifying ? 'border-primary/70 bg-primary/5' : 'border-border/60 hover:border-primary/50'}`}>
+                      <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border transition-colors ${verifying ? 'bg-primary/20 border-primary/40 animate-pulse' : 'bg-primary/10 border-primary/20 group-hover:bg-primary/20'}`}>
+                        {verifying ? (
+                          <Shield className="w-8 h-8 text-primary animate-pulse" />
+                        ) : (
+                          <Camera className="w-8 h-8 text-primary" />
+                        )}
                       </div>
-                      <h4 className="font-bold text-white mb-2">Scan QR Code</h4>
-                      <p className="text-muted-foreground text-sm mb-4">Point your camera at the ticket QR code</p>
-                      <Button
-                        onClick={() => {
-                          setQrScanType('verify');
-                          setIsQRScannerOpen(true);
-                        }}
-                        className="bg-primary hover:bg-primary/90 text-white shadow-glow shadow-primary/20"
-                        data-testid="button-start-qr-scan"
-                      >
-                        <Camera className="w-4 h-4 mr-2" />
-                        Start Camera
-                      </Button>
+                      {verifying ? (
+                        <>
+                          <h4 className="font-bold text-primary mb-2 animate-pulse">Verifying Ticket...</h4>
+                          <p className="text-muted-foreground text-sm">Checking blockchain records</p>
+                        </>
+                      ) : (
+                        <>
+                          <h4 className="font-bold text-white mb-2">Scan QR Code</h4>
+                          <p className="text-muted-foreground text-sm mb-4">Point your camera at the ticket QR code — it will auto-verify instantly</p>
+                          <Button
+                            onClick={() => {
+                              setQrScanType('verify');
+                              setIsQRScannerOpen(true);
+                            }}
+                            className="bg-primary hover:bg-primary/90 text-white shadow-glow shadow-primary/20"
+                            data-testid="button-start-qr-scan"
+                          >
+                            <Camera className="w-4 h-4 mr-2" />
+                            Start Camera
+                          </Button>
+                        </>
+                      )}
                     </div>
 
                     <div className="flex items-center mb-6">
@@ -1880,10 +2076,11 @@ export default function Home() {
                       <Button
                         type="submit"
                         className="w-full bg-accent hover:bg-accent/90"
+                        disabled={verifying}
                         data-testid="button-verify-ticket"
                       >
                         <Shield className="w-4 h-4 mr-2" />
-                        Verify on Blockchain
+                        {verifying ? 'Verifying...' : 'Verify Ticket'}
                       </Button>
                     </form>
 
@@ -1993,19 +2190,35 @@ export default function Home() {
                                   </span>
                                 </div>
                                 <div className="flex justify-between items-center border-b border-border/50 pb-2">
-                                  <span className="text-muted-foreground uppercase text-[10px] font-bold tracking-widest">Owner Address</span>
-                                  <span className="font-mono font-medium text-white" data-testid="text-verified-ticket-owner">
-                                    {verificationResult.owner.slice(0, 6)}...{verificationResult.owner.slice(-4)}
+                                  <span className="text-muted-foreground uppercase text-[10px] font-bold tracking-widest">Owner</span>
+                                  <span className="font-mono font-medium text-white text-xs" data-testid="text-verified-ticket-owner">
+                                    {verificationResult.owner.length > 20
+                                      ? `${verificationResult.owner.slice(0, 10)}...${verificationResult.owner.slice(-6)}`
+                                      : verificationResult.owner}
                                   </span>
                                 </div>
                                 <div className="flex justify-between items-center border-b border-border/50 pb-2">
-                                  <span className="text-muted-foreground uppercase text-[10px] font-bold tracking-widest">Attendee Name</span>
+                                  <span className="text-muted-foreground uppercase text-[10px] font-bold tracking-widest">Attendee</span>
                                   <span className="font-bold text-white text-sm break-all max-w-[200px] text-right" data-testid="text-verified-attendee-name">
-                                    {verificationResult.attendeeName.length > 30 
+                                    {verificationResult.attendeeName.length > 30
                                       ? `${verificationResult.attendeeName.slice(0, 15)}...${verificationResult.attendeeName.slice(-10)}`
                                       : verificationResult.attendeeName}
                                   </span>
                                 </div>
+                                {verifiedHash && (
+                                  <div className="flex justify-between items-start border-b border-border/50 pb-2 gap-2">
+                                    <span className="text-muted-foreground uppercase text-[10px] font-bold tracking-widest whitespace-nowrap mt-1">Blockchain Hash</span>
+                                    <a
+                                      href={`https://sepolia.etherscan.io/tx/${verifiedHash}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="font-mono text-[10px] text-blue-400 underline break-all max-w-[190px] text-right hover:text-blue-300"
+                                      title={verifiedHash}
+                                    >
+                                      {verifiedHash.slice(0, 12)}...{verifiedHash.slice(-10)} ↗
+                                    </a>
+                                  </div>
+                                )}
                                 {verificationResult.event && (
                                   <div className="flex justify-between items-center border-b border-border/50 pb-2">
                                     <span className="text-muted-foreground uppercase text-[10px] font-bold tracking-widest">Event</span>
@@ -2203,9 +2416,64 @@ export default function Home() {
                     {enrollmentRequests.map((request) => (
                       <Card key={request.id} className="bg-card/40 backdrop-blur-sm border-border hover:border-primary/50 transition-all">
                         <CardContent className="p-6">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3 mb-3">
+                          <div className="flex items-start gap-4">
+                            {/* User Photo - inline thumbnail */}
+                            <div className="flex-shrink-0">
+                              {(() => {
+                                const photoState = inlinePhotos.get(request.id);
+                                if (request.has_photo) {
+                                  if (photoState?.loading) {
+                                    return (
+                                      <div className="w-20 h-20 rounded-xl bg-muted/40 border border-border flex items-center justify-center animate-pulse">
+                                        <Camera className="w-6 h-6 text-muted-foreground/40" />
+                                      </div>
+                                    );
+                                  } else if (photoState?.url) {
+                                    return (
+                                      <button
+                                        onClick={() => {
+                                          setPhotoViewerData({
+                                            photoPath: request.photo_path,
+                                            encryptionKey: request.photo_encryption_key,
+                                            encryptionIv: request.photo_encryption_iv,
+                                            requesterName: request.requester_name,
+                                          });
+                                          setPhotoViewerOpen(true);
+                                        }}
+                                        title="Click to view full photo"
+                                      >
+                                        <img
+                                          src={photoState.url}
+                                          alt={request.requester_name}
+                                          className="w-20 h-20 rounded-xl object-cover border-2 border-green-500/40 hover:border-green-500/80 shadow-lg transition-all"
+                                        />
+                                      </button>
+                                    );
+                                  } else {
+                                    return (
+                                      <button
+                                        onClick={() => loadInlinePhoto(request.id, request.photo_path, request.photo_encryption_key, request.photo_encryption_iv)}
+                                        className="w-20 h-20 rounded-xl bg-green-500/10 border border-green-500/30 flex flex-col items-center justify-center hover:bg-green-500/20 transition-all"
+                                        title="Load photo"
+                                      >
+                                        <Camera className="w-6 h-6 text-green-400 mb-1" />
+                                        <span className="text-[9px] text-green-400 font-bold">Load</span>
+                                      </button>
+                                    );
+                                  }
+                                } else {
+                                  return (
+                                    <div className="w-20 h-20 rounded-xl bg-red-500/10 border border-red-500/20 flex flex-col items-center justify-center">
+                                      <XCircle className="w-6 h-6 text-red-400/50 mb-1" />
+                                      <span className="text-[9px] text-red-400/60 font-bold">No Photo</span>
+                                    </div>
+                                  );
+                                }
+                              })()}
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-3 mb-3 flex-wrap">
                                 <h3 className="text-lg font-bold text-white">{request.event_name}</h3>
                                 {request.event_type && (
                                   <Badge variant="outline" className="text-xs px-2 py-0.5 border-primary/30 text-primary/80">
@@ -2238,7 +2506,7 @@ export default function Home() {
                                 )}
                               </div>
                               
-                              <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                              <div className="grid grid-cols-2 gap-3 text-sm mb-4">
                                 <div>
                                   <span className="text-muted-foreground block text-xs uppercase tracking-wider font-bold mb-1">Requester Name</span>
                                   <span className="text-white font-medium">{request.requester_name}</span>
@@ -2255,56 +2523,28 @@ export default function Home() {
                                   <span className="text-muted-foreground block text-xs uppercase tracking-wider font-bold mb-1">Requested</span>
                                   <span className="text-white">{new Date(request.requested_at).toLocaleDateString()}</span>
                                 </div>
-                                <div>
-                                  <span className="text-muted-foreground block text-xs uppercase tracking-wider font-bold mb-1">Enrollment Photo</span>
-                                  {request.has_photo ? (
-                                    <span className="text-green-400 font-medium flex items-center gap-1.5">
-                                      <Camera className="w-3.5 h-3.5" />
-                                      Photo ✓
-                                      <button
-                                        onClick={() => {
-                                          setPhotoViewerData({
-                                            photoPath: request.photo_path,
-                                            encryptionKey: request.photo_encryption_key,
-                                            encryptionIv: request.photo_encryption_iv,
-                                            requesterName: request.requester_name,
-                                          });
-                                          setPhotoViewerOpen(true);
-                                        }}
-                                        className="ml-1 text-xs text-primary underline hover:text-primary/80"
-                                      >
-                                        View
-                                      </button>
-                                    </span>
-                                  ) : (
-                                    <span className="text-red-400 font-medium flex items-center gap-1.5">
-                                      <XCircle className="w-3.5 h-3.5" />
-                                      No Photo
-                                    </span>
-                                  )}
-                                </div>
                               </div>
-                            </div>
 
-                            {request.status === 'pending' && (
-                              <div className="flex gap-3">
-                                <Button
-                                  onClick={() => handleApproveRequest(request)}
-                                  className="bg-green-600 hover:bg-green-700 text-white font-bold"
-                                >
-                                  <CheckCircle className="w-4 h-4 mr-2" />
-                                  Approve
-                                </Button>
-                                <Button
-                                  onClick={() => handleDeclineRequest(request)}
-                                  variant="destructive"
-                                  className="font-bold"
-                                >
-                                  <XCircle className="w-4 h-4 mr-2" />
-                                  Decline
-                                </Button>
-                              </div>
-                            )}
+                              {request.status === 'pending' && (
+                                <div className="flex gap-3 mt-2">
+                                  <Button
+                                    onClick={() => handleApproveRequest(request)}
+                                    className="bg-green-600 hover:bg-green-700 text-white font-bold"
+                                  >
+                                    <CheckCircle className="w-4 h-4 mr-2" />
+                                    Approve & Mint Ticket
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleDeclineRequest(request)}
+                                    variant="destructive"
+                                    className="font-bold"
+                                  >
+                                    <XCircle className="w-4 h-4 mr-2" />
+                                    Decline
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </CardContent>
                       </Card>
@@ -2402,7 +2642,7 @@ export default function Home() {
                                   }`}>
                                     {msg.sender_role === 'organizer' ? 'You' : msg.sender_name}
                                   </p>
-                                  <p className="text-sm text-white">{msg.message}</p>
+                                  <p className={`text-sm ${msg.sender_role === 'organizer' ? 'text-white' : 'text-foreground'}`}>{msg.message}</p>
                                   <p className={`text-[10px] mt-1 ${
                                     msg.sender_role === 'organizer' ? 'text-white/60' : 'text-muted-foreground'
                                   }`}>
@@ -2412,6 +2652,7 @@ export default function Home() {
                               </div>
                             ))
                           )}
+                          <div ref={chatEndRef} />
                         </div>
 
                         {/* Reply Input */}

@@ -159,11 +159,12 @@ export default function UserDashboard() {
   const [selectedEventForChat, setSelectedEventForChat] = useState<Event | null>(null);
   const [organizerMessages, setOrganizerMessages] = useState<any[]>([]);
   const [orgChatLoading, setOrgChatLoading] = useState(false);
+  const orgChatEndRef = useRef<HTMLDivElement>(null);
   
   // Sidebar and Payment
   const [activeSidebarSection, setActiveSidebarSection] = useState<'dashboard' | 'settings' | 'payments' | 'attended' | 'pending' | 'badges'>('dashboard');
   const [paymentHistory, setPaymentHistory] = useState<any[]>([
-    { id: 1, type: 'Subscription', plan: 'Premium', amount: '₹799', date: new Date(Date.now() - 86400000 * 15), status: 'completed' },
+    { id: 1, type: 'Subscription', plan: 'Premium', amount: '₹499', date: new Date(Date.now() - 86400000 * 15), status: 'completed' },
     { id: 2, type: 'Event Ticket', eventName: 'Web3 Summit', amount: '₹0.03 ETH', date: new Date(Date.now() - 86400000 * 7), status: 'completed' },
   ]);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
@@ -218,26 +219,47 @@ export default function UserDashboard() {
     // Poll for changes to approved ads every 2 seconds
     const adsInterval = setInterval(loadApprovedAds, 2000);
 
-    // Set up real-time subscription for new tickets
+    // Set up real-time subscription for new ticket_emails (where approved tickets are stored)
     const ticketsSubscription = supabase
-      .channel('tickets_changes')
+      .channel('ticket_emails_changes')
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
-        table: 'tickets'
+        table: 'ticket_emails'
       }, (payload) => {
-        console.log('New ticket detected:', payload);
-        // Refresh data when new ticket is added
-        fetchData();
+        console.log('New ticket_email detected:', payload);
+        // Only refresh if the ticket belongs to the current user
+        const newTicket = payload.new as any;
+        if (newTicket?.recipient_email === user?.email) {
+          fetchData();
+        }
       })
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
-        table: 'tickets'
+        table: 'ticket_emails'
       }, (payload) => {
-        console.log('Ticket updated:', payload);
-        // Refresh data when ticket is updated
-        fetchData();
+        console.log('Ticket_email updated:', payload);
+        const updatedTicket = payload.new as any;
+        if (updatedTicket?.recipient_email === user?.email) {
+          fetchData();
+        }
+      })
+      .subscribe();
+
+    // Also watch enrollment_requests for status changes (approved → trigger ticket fetch)
+    const enrollmentSubscription = supabase
+      .channel('enrollment_status_changes')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'enrollment_requests'
+      }, (payload) => {
+        const updated = payload.new as any;
+        if (updated?.requester_email === user?.email && updated?.status === 'approved') {
+          console.log('Enrollment approved — refreshing tickets...');
+          fetchData();
+        }
       })
       .subscribe();
 
@@ -273,6 +295,7 @@ export default function UserDashboard() {
         table: 'chat_messages'
       }, (payload) => {
         const msg = payload.new as any;
+        // An organizer reply: sender_role='organizer' and sender_email=attendee's email (the user they replied to)
         if (msg.sender_role === 'organizer' && msg.sender_email === user?.email) {
           setOrganizerMessages(prev => {
             if (prev.some(m => m.id === msg.id)) return prev;
@@ -285,6 +308,7 @@ export default function UserDashboard() {
     return () => {
       clearInterval(adsInterval);
       ticketsSubscription.unsubscribe();
+      enrollmentSubscription.unsubscribe();
       eventsSubscription.unsubscribe();
       chatSubscription.unsubscribe();
     };
@@ -298,12 +322,23 @@ export default function UserDashboard() {
       setUserTickets([]);
       
       // Fetch real public events from Supabase
-      const { data: realEventsData } = await supabase
+      let realEventsData: any[] | null = null;
+      const { data: publicEvents, error: pubErr } = await supabase
         .from('events')
         .select('*')
         .eq('is_public', true)
-        .eq('is_active', true)
         .order('date', { ascending: true });
+
+      if (pubErr) {
+        // is_public column may not exist — fetch all events as fallback
+        const { data: allEventsData } = await supabase
+          .from('events')
+          .select('*')
+          .order('date', { ascending: true });
+        realEventsData = allEventsData;
+      } else {
+        realEventsData = publicEvents;
+      }
 
       // Fetch private events the user was invited to
       let invitedEvents: any[] = [];
@@ -320,8 +355,7 @@ export default function UserDashboard() {
             const { data: privateEvents } = await supabase
               .from('events')
               .select('*')
-              .in('id', invitedIds)
-              .eq('is_active', true);
+              .in('id', invitedIds);
             invitedEvents = privateEvents || [];
           }
         }
@@ -679,31 +713,29 @@ export default function UserDashboard() {
     if (!user?.email) return;
     setOrgChatLoading(true);
     try {
-      const { data, error } = await supabase
+      const eid = event.event_id || event.id;
+
+      // Fetch user's own messages for this event
+      const { data: userMsgs } = await supabase
         .from('chat_messages')
         .select('*')
-        .eq('event_id', event.event_id || event.id)
+        .eq('event_id', eid)
         .eq('sender_email', user.email)
+        .eq('sender_role', 'user')
         .order('created_at', { ascending: true });
 
-      // Also fetch organizer replies for this user's conversation
-      const { data: orgReplies } = await supabase
+      // Fetch organizer replies — scoped to this event and this user's conversation
+      const { data: orgMsgs } = await supabase
         .from('chat_messages')
         .select('*')
-        .eq('event_id', event.event_id || event.id)
+        .eq('event_id', eid)
         .eq('sender_role', 'organizer')
-        .eq('organizer_address', event.organizer_address || '')
+        .eq('sender_email', user.email)   // organizer sets sender_email = user's email when replying
         .order('created_at', { ascending: true });
 
-      // Merge and deduplicate by id, then sort
-      const allMsgs = [...(data || []), ...(orgReplies || [])];
+      // Merge, deduplicate by id, sort chronologically
+      const allMsgs = [...(userMsgs || []), ...(orgMsgs || [])];
       const uniqueMsgs = Array.from(new Map(allMsgs.map(m => [m.id, m])).values())
-        .filter(m => {
-          // Keep user's own messages + organizer replies that reference this user
-          if (m.sender_role === 'user' && m.sender_email === user.email) return true;
-          if (m.sender_role === 'organizer') return true;
-          return false;
-        })
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
       setOrganizerMessages(uniqueMsgs);
@@ -722,7 +754,7 @@ export default function UserDashboard() {
       event_id: eventId,
       event_name: selectedEventForChat.name,
       sender_email: user.email,
-      sender_name: user.user_metadata?.name || enrollmentForm.fullName || 'User',
+      sender_name: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
       sender_role: 'user',
       organizer_address: selectedEventForChat.organizer_address || '',
       message: messageText.trim(),
@@ -736,7 +768,11 @@ export default function UserDashboard() {
 
     if (error) {
       console.error('Failed to send message:', error);
-      alert('Failed to send message. Please try again.');
+      toast({
+        title: 'Message Failed',
+        description: 'Could not send your message. The chat table may not be set up yet in Supabase.',
+        variant: 'destructive',
+      });
     } else if (data) {
       setOrganizerMessages(prev => [...prev, data]);
       setOrgChatMessage('');
@@ -796,6 +832,11 @@ export default function UserDashboard() {
   useEffect(() => {
     supportChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [supportChatMessages]);
+
+  // Auto scroll organizer chat
+  useEffect(() => {
+    orgChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [organizerMessages]);
 
   // Load support chat when dialog opens
   useEffect(() => {
@@ -2750,10 +2791,11 @@ export default function UserDashboard() {
                 <div className="text-center">
                   <Crown className="h-12 w-12 text-yellow-500 mx-auto mb-3" />
                   <h3 className="text-2xl font-bold text-white mb-1">Premium</h3>
-                  <div className="flex items-center justify-center gap-1 mb-4">
-                    <span className="text-3xl font-bold text-yellow-500">₹799</span>
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <span className="text-3xl font-bold text-yellow-500">₹499</span>
                     <span className="text-muted-foreground">/month</span>
                   </div>
+                  <p className="text-xs text-muted-foreground mb-4">≈ 0.002 ETH on Sepolia testnet</p>
                 </div>
                 <div className="space-y-3 text-sm">
                   <p className="flex items-center text-white">
@@ -2789,11 +2831,11 @@ export default function UserDashboard() {
                         toast({ title: 'Wallet Not Found', description: 'Please install MetaMask to subscribe.', variant: 'destructive' });
                         return;
                       }
-                      const premiumFee = '0.0032';
+                      const premiumFee = '0.002';
                       const provider = new ethers.BrowserProvider(window.ethereum);
                       const signer = await provider.getSigner();
                       const organizerAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0';
-                      toast({ title: 'Processing Payment...', description: `Sending ${premiumFee} ETH (₹799) for Premium subscription...` });
+                      toast({ title: 'Processing Payment...', description: `Sending ${premiumFee} ETH (≈₹499) for Premium subscription...` });
                       const tx = await signer.sendTransaction({ to: organizerAddress, value: ethers.parseEther(premiumFee) });
                       toast({ title: 'Payment Pending...', description: 'Waiting for transaction confirmation...' });
                       await tx.wait();
@@ -2807,7 +2849,7 @@ export default function UserDashboard() {
                   className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <Wallet className="h-4 w-4" />
-                  {userSubscription === 'premium' ? 'Current Plan' : testMode ? '🧪 Activate Free (Test)' : 'Pay 0.0032 ETH (₹799)'}
+                  {userSubscription === 'premium' ? 'Current Plan' : testMode ? '🧪 Activate Free (Test)' : 'Pay 0.002 ETH (≈₹499)'}
                 </Button>
                 {userSubscription === 'premium' && (
                   <Button
@@ -2834,10 +2876,11 @@ export default function UserDashboard() {
                 <div className="text-center">
                   <Zap className="h-12 w-12 text-amber-400 mx-auto mb-3" />
                   <h3 className="text-2xl font-bold text-white mb-1">Gold</h3>
-                  <div className="flex items-center justify-center gap-1 mb-4">
-                    <span className="text-3xl font-bold text-amber-400">₹1,499</span>
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <span className="text-3xl font-bold text-amber-400">₹999</span>
                     <span className="text-muted-foreground">/month</span>
                   </div>
+                  <p className="text-xs text-muted-foreground mb-4">≈ 0.004 ETH on Sepolia testnet</p>
                 </div>
                 <div className="space-y-3 text-sm">
                   <p className="flex items-center text-white">
@@ -2877,11 +2920,11 @@ export default function UserDashboard() {
                         toast({ title: 'Wallet Not Found', description: 'Please install MetaMask to subscribe.', variant: 'destructive' });
                         return;
                       }
-                      const goldFee = '0.006';
+                      const goldFee = '0.004';
                       const provider = new ethers.BrowserProvider(window.ethereum);
                       const signer = await provider.getSigner();
                       const organizerAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0';
-                      toast({ title: 'Processing Payment...', description: `Sending ${goldFee} ETH (₹1,499) for Gold subscription...` });
+                      toast({ title: 'Processing Payment...', description: `Sending ${goldFee} ETH (≈₹999) for Gold subscription...` });
                       const tx = await signer.sendTransaction({ to: organizerAddress, value: ethers.parseEther(goldFee) });
                       toast({ title: 'Payment Pending...', description: 'Waiting for transaction confirmation...' });
                       await tx.wait();
@@ -2895,7 +2938,7 @@ export default function UserDashboard() {
                   className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <Wallet className="h-4 w-4" />
-                  {userSubscription === 'gold' ? 'Current Plan' : testMode ? '🧪 Activate Free (Test)' : 'Pay 0.006 ETH (₹1,499)'}
+                  {userSubscription === 'gold' ? 'Current Plan' : testMode ? '🧪 Activate Free (Test)' : 'Pay 0.004 ETH (≈₹999)'}
                 </Button>
                 {userSubscription === 'gold' && (
                   <Button
@@ -3237,9 +3280,14 @@ export default function UserDashboard() {
               <MessageCircle className="h-6 w-6 text-primary" />
               {selectedEventForChat?.name || 'Event Organizer'} Chat
             </DialogTitle>
-            <p className="text-sm text-muted-foreground">Chat directly with the event organizer</p>
+            <p className="text-sm text-muted-foreground">
+              Chat directly with the event organizer
+              {selectedEventForChat?.organizer_name && (
+                <span className="text-primary font-medium"> · {selectedEventForChat.organizer_name}</span>
+              )}
+            </p>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto space-y-3 py-4 px-2 min-h-[200px]">
+          <div className="flex-1 overflow-y-auto space-y-3 py-4 px-2 min-h-[200px] max-h-[360px]">
             {orgChatLoading ? (
               <div className="flex items-center justify-center py-8">
                 <div className="text-sm text-muted-foreground">Loading messages...</div>
@@ -3262,7 +3310,7 @@ export default function UserDashboard() {
                     <p className={`text-xs font-semibold mb-1 ${
                       msg.sender_role === 'user' ? 'text-white/80' : 'text-purple-400'
                     }`}>
-                      {msg.sender_role === 'user' ? 'You' : msg.sender_name}
+                      {msg.sender_role === 'user' ? 'You' : (msg.sender_name || 'Organizer')}
                     </p>
                     <p className="text-sm text-white">{msg.message}</p>
                     <p className={`text-[10px] mt-1 ${
@@ -3274,6 +3322,7 @@ export default function UserDashboard() {
                 </div>
               ))
             )}
+            <div ref={orgChatEndRef} />
           </div>
           <div className="border-t border-border pt-4 flex gap-2">
             <input
@@ -3294,7 +3343,7 @@ export default function UserDashboard() {
               disabled={!orgChatMessage.trim()}
               className="px-4 bg-purple-500 hover:bg-purple-600"
             >
-              Send
+              <Send className="h-4 w-4" />
             </Button>
           </div>
         </DialogContent>

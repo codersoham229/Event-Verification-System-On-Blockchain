@@ -975,6 +975,30 @@ export default function SupportDashboard() {
                     </Button>
                   </CardContent>
                 </Card>
+
+                {/* Reset Sepolia Guide */}
+                <Card className="bg-background/50 border-blue-900/40 lg:col-span-2">
+                  <CardHeader className="border-b border-blue-900/30 bg-blue-900/10">
+                    <CardTitle className="text-white flex items-center gap-2 text-base">
+                      <Shield className="h-4 w-4 text-blue-400" />Reset Organizer Setup Guide
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Forces the Sepolia testnet guide to show again on the organizer dashboard. Use this if someone dismissed it by mistake or needs to re-read it.</p>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        localStorage.removeItem('sepoliaGuideDismissed');
+                        localStorage.removeItem('sepoliaGuideDismissed_v2');
+                        toast({ title: '✅ Guide Reset', description: 'The Sepolia setup guide will show again on the organizer dashboard.' });
+                      }}
+                      className="shrink-0 font-bold bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      <Shield className="h-4 w-4 mr-2" />Reset Guide
+                    </Button>
+                  </CardContent>
+                </Card>
               </div>
             </TabsContent>
           </Tabs>
