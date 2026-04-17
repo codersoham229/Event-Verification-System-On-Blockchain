@@ -337,8 +337,9 @@ export default function Home() {
       })
       .subscribe();
 
+    const chatChannelName = `org-chat-${walletState.address || 'anon'}-${Date.now()}`;
     const chatChannel = supabase
-      .channel('org-chat-live')
+      .channel(chatChannelName)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
         fetchChatConversations();
         // If viewing the same conversation, append the new message
@@ -552,6 +553,15 @@ export default function Home() {
     }
   };
 
+  // Poll for new messages in the active conversation every 3s
+  useEffect(() => {
+    if (!selectedConversation) return;
+    const interval = setInterval(() => {
+      loadConversation(selectedConversation, true);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [selectedConversation?.event_id, selectedConversation?.sender_email]);
+
   // ── Organizer Chat Inbox ──────────────────────────────────────────────
   const fetchChatConversations = async () => {
     if (!walletState.address) return;
@@ -589,9 +599,9 @@ export default function Home() {
     }
   };
 
-  const loadConversation = async (conv: { event_id: number; sender_email: string; event_name: string; sender_name: string }) => {
+  const loadConversation = async (conv: { event_id: number; sender_email: string; event_name: string; sender_name: string }, silent = false) => {
     setSelectedConversation(conv);
-    setChatLoading(true);
+    if (!silent) setChatLoading(true);
     try {
       // Get all messages for this conversation (from this user + organizer replies)
       const { data: userMsgs } = await supabase
@@ -607,7 +617,6 @@ export default function Home() {
         .select('*')
         .eq('event_id', conv.event_id)
         .eq('sender_email', conv.sender_email)
-        .eq('organizer_address', walletState.address)
         .eq('sender_role', 'organizer')
         .order('created_at', { ascending: true });
 
@@ -615,11 +624,15 @@ export default function Home() {
       const uniqueMsgs = Array.from(new Map(allMsgs.map(m => [m.id, m])).values())
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
-      setConversationMessages(uniqueMsgs);
+      setConversationMessages(prev => {
+        if (prev.length === uniqueMsgs.length &&
+            prev.every((m, i) => m.id === uniqueMsgs[i]?.id)) return prev;
+        return uniqueMsgs;
+      });
     } catch (err) {
       console.error('Error loading conversation:', err);
     } finally {
-      setChatLoading(false);
+      if (!silent) setChatLoading(false);
     }
   };
 

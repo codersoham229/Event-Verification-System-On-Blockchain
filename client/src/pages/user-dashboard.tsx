@@ -45,7 +45,8 @@ import {
   Save,
   X,
   AlertCircle,
-  Send
+  Send,
+  RefreshCw
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { CameraCapture } from '@/components/camera-capture';
@@ -286,16 +287,17 @@ export default function UserDashboard() {
       })
       .subscribe();
 
-    // Real-time subscription for chat replies from organizers
+    // Real-time subscription for chat messages — unique channel per user session
+    const chatChannelName = `user-chat-${user.id || user.email?.replace(/[^a-z0-9]/gi, '')}-${Date.now()}`;
     const chatSubscription = supabase
-      .channel('user-chat-live')
+      .channel(chatChannelName)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'chat_messages'
       }, (payload) => {
         const msg = payload.new as any;
-        // An organizer reply: sender_role='organizer' and sender_email=attendee's email (the user they replied to)
+        // Catch organizer replies addressed to this user
         if (msg.sender_role === 'organizer' && msg.sender_email === user?.email) {
           setOrganizerMessages(prev => {
             if (prev.some(m => m.id === msg.id)) return prev;
@@ -709,9 +711,9 @@ export default function UserDashboard() {
   };
 
   // ── Organizer Chat (Supabase-powered) ──────────────────────────────────
-  const loadChatMessages = async (event: Event) => {
+  const loadChatMessages = async (event: Event, silent = false) => {
     if (!user?.email) return;
-    setOrgChatLoading(true);
+    if (!silent) setOrgChatLoading(true);
     try {
       const eid = event.event_id || event.id;
 
@@ -738,11 +740,15 @@ export default function UserDashboard() {
       const uniqueMsgs = Array.from(new Map(allMsgs.map(m => [m.id, m])).values())
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
-      setOrganizerMessages(uniqueMsgs);
+      setOrganizerMessages(prev => {
+        if (prev.length === uniqueMsgs.length &&
+            prev.every((m, i) => m.id === uniqueMsgs[i]?.id)) return prev;
+        return uniqueMsgs;
+      });
     } catch (err) {
       console.error('Error loading chat:', err);
     } finally {
-      setOrgChatLoading(false);
+      if (!silent) setOrgChatLoading(false);
     }
   };
 
@@ -837,6 +843,15 @@ export default function UserDashboard() {
   useEffect(() => {
     orgChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [organizerMessages]);
+
+  // Poll for new chat messages every 3 seconds while dialog is open
+  useEffect(() => {
+    if (!organizerChatOpen || !selectedEventForChat) return;
+    const interval = setInterval(() => {
+      loadChatMessages(selectedEventForChat, true);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [organizerChatOpen, selectedEventForChat?.id]);
 
   // Load support chat when dialog opens
   useEffect(() => {
@@ -2275,12 +2290,23 @@ export default function UserDashboard() {
             {activeSidebarSection === 'pending' && (
               <div className="space-y-8">
                 <div className="mb-8">
-                  <h2 className="text-3xl font-bold text-white mb-3 flex items-center gap-3">
-                    <div className="p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
-                      <Clock className="h-8 w-8 text-yellow-400" />
-                    </div>
-                    Pending Approval
-                  </h2>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-3xl font-bold text-white mb-3 flex items-center gap-3">
+                      <div className="p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
+                        <Clock className="h-8 w-8 text-yellow-400" />
+                      </div>
+                      Pending Approval
+                    </h2>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fetchData()}
+                      className="flex items-center gap-2 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Refresh
+                    </Button>
+                  </div>
                   <p className="text-muted-foreground text-base">Enrollment requests awaiting organizer approval</p>
                 </div>
 
