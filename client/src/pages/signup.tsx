@@ -63,7 +63,7 @@ export default function SignUpPage() {
     try {
       if (!isSupabaseConfigured()) {
         try {
-          const user = localAuth.signup(formData.email, formData.password, formData.name, 'organizer');
+          const user = await localAuth.signup(formData.email, formData.password, formData.name, 'organizer');
           localAuth.setCurrentUser(user);
 
           toast({

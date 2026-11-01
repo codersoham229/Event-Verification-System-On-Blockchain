@@ -12,12 +12,19 @@ import {
   ExternalLink,
   Fingerprint,
   Blocks,
-  AlertTriangle
+  AlertTriangle,
+  Wallet,
+  Loader2,
+  RefreshCw,
+  Check
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { contractService } from '@/lib/contract';
 import { supabase } from '@/lib/supabase';
+import { useWallet } from '@/hooks/use-wallet';
+import { useToast } from '@/hooks/use-toast';
 
 // CSS keyframe animations injected inline
 const animationStyles = `
@@ -46,6 +53,11 @@ const animationStyles = `
     70% { box-shadow: 0 0 0 20px rgba(16, 185, 129, 0); }
     100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
   }
+  @keyframes ringPulseWarning {
+    0% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.6); }
+    70% { box-shadow: 0 0 0 20px rgba(234, 179, 8, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
+  }
   @keyframes floatSlow {
     0%, 100% { transform: translateY(0) rotate(0deg); }
     50% { transform: translateY(-20px) rotate(5deg); }
@@ -60,6 +72,7 @@ const animationStyles = `
   .animate-slideInLeft { animation: slideInLeft 0.6s ease-out forwards; }
   .animate-slideInRight { animation: slideInRight 0.6s ease-out forwards; }
   .animate-ringPulse { animation: ringPulse 2s infinite; }
+  .animate-ringPulseWarning { animation: ringPulseWarning 2s infinite; }
   .animate-floatSlow { animation: floatSlow 6s ease-in-out infinite; }
   .bg-gradient-animate {
     background-size: 200% 200%;
@@ -76,6 +89,9 @@ const animationStyles = `
 
 export default function VerifyTicket() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const { walletState, connectWallet, isConnecting } = useWallet();
+
   const [loading, setLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
   const [verifyStep, setVerifyStep] = useState<'connecting' | 'reading' | 'verifying' | 'done'>('connecting');
@@ -83,11 +99,17 @@ export default function VerifyTicket() {
   const [eventData, setEventData] = useState<any>(null);
   const [recipientEmail, setRecipientEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<'network' | 'contract' | 'general' | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [eventId, setEventId] = useState<string | null>(null);
   const [ticketId, setTicketId] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<any>(null);
-  const [isDbVerified, setIsDbVerified] = useState(false); // true = database fallback, not blockchain
+  const [unmintedDbRecord, setUnmintedDbRecord] = useState(false);
+
+  // Gate Check-in (Mark as used) state
+  const [markStatus, setMarkStatus] = useState<'idle' | 'signing' | 'mining' | 'success' | 'error'>('idle');
+  const [markTxHash, setMarkTxHash] = useState<string | null>(null);
+  const [markError, setMarkError] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -153,7 +175,6 @@ export default function VerifyTicket() {
           ticket: ticketRecord
         });
       } else if (ticketRecord) {
-        // Event not in DB but ticket exists — show minimal data
         setPreviewData({
           event: { id: Number(eid), name: 'Event #' + eid, date: '', location: '', description: '' },
           ticket: ticketRecord
@@ -174,6 +195,12 @@ export default function VerifyTicket() {
   const runVerification = async (eventId: string, ticketId: string) => {
     try {
       setLoading(true);
+      setError(null);
+      setErrorType(null);
+      setUnmintedDbRecord(false);
+      setMarkStatus('idle');
+      setMarkTxHash(null);
+      setMarkError(null);
 
       // Step 1 — Connecting to blockchain
       setVerifyStep('connecting');
@@ -185,10 +212,31 @@ export default function VerifyTicket() {
 
       // Step 3 — Verifying ticket
       setVerifyStep('verifying');
-      const verification = await contractService.verifyTicket(eventId, ticketId);
+      
+      let verification;
+      try {
+        verification = await contractService.verifyTicket(eventId, ticketId);
+      } catch (contractErr: any) {
+        console.error('Contract verification failed:', contractErr);
+        const errMsg = (contractErr?.message || '').toLowerCase();
+        const isNetwork = errMsg.includes('network') || 
+                          errMsg.includes('fetch') || 
+                          errMsg.includes('connection') ||
+                          errMsg.includes('timeout') ||
+                          errMsg.includes('rpc');
+        setErrorType(isNetwork ? 'network' : 'contract');
+        throw new Error(
+          isNetwork 
+            ? 'Unable to connect to the Ethereum Sepolia RPC network. Please check your internet connection and try again.'
+            : `Smart contract error: ${contractErr.reason || contractErr.message || 'Verification call failed'}`
+        );
+      }
 
-      // If blockchain says invalid, try Supabase fallback before giving up
+      // CRITICAL SECURITY ENFORCEMENT:
+      // If the smart contract reports the ticket as invalid or non-existent on-chain,
+      // it must NEVER be marked valid based on an off-chain database entry.
       if (!verification.valid) {
+        // Diagnostic check: check if an unminted off-chain record exists in Supabase
         try {
           const { data: dbTicket } = await supabase
             .from('ticket_emails')
@@ -197,43 +245,53 @@ export default function VerifyTicket() {
             .maybeSingle();
 
           if (dbTicket) {
-            // Found in database — treat as valid (database-verified)
-            setIsDbVerified(true);
-            setTicketData({ valid: true, owner: dbTicket.unique_hash || 'N/A', attendeeName: dbTicket.recipient_email || 'Verified Attendee', isUsed: dbTicket.status === 'used' });
+            setUnmintedDbRecord(true);
             setRecipientEmail(dbTicket.recipient_email || null);
-
-            // Try to load event details from Supabase too
-            try {
-              const { data: evtRecord } = await supabase.from('events').select('*').eq('id', Number(eventId)).maybeSingle();
-              if (evtRecord) setEventData({ name: evtRecord.name, date: evtRecord.date, location: evtRecord.location, description: evtRecord.description });
-            } catch { /* ignore */ }
-
-            setVerifyStep('done');
-            await delay(300);
-            setLoading(false);
-            setTimeout(() => setShowResult(true), 100);
-            return;
           }
-        } catch (dbFallbackErr) {
-          console.warn('Supabase fallback also failed:', dbFallbackErr);
+        } catch (dbCheckErr) {
+          console.warn('Database diagnostic check skipped:', dbCheckErr);
         }
+
+        setTicketData({
+          valid: false,
+          owner: '',
+          attendeeName: '',
+          isUsed: false
+        });
+
+        // Still attempt to load event details for display context
+        try {
+          const event = await contractService.getEvent(eventId);
+          setEventData(event);
+        } catch {
+          try {
+            const { data: evtRecord } = await supabase.from('events').select('*').eq('id', Number(eventId)).maybeSingle();
+            if (evtRecord) setEventData({ name: evtRecord.name, date: evtRecord.date, location: evtRecord.location, description: evtRecord.description });
+          } catch { /* ignore */ }
+        }
+
+        setVerifyStep('done');
+        await delay(300);
+        setLoading(false);
+        setTimeout(() => setShowResult(true), 100);
+        return;
       }
 
+      // Ticket is confirmed valid on the blockchain
       setTicketData(verification);
 
-      // Get event details from blockchain too
+      // Get event details from blockchain
       try {
         const event = await contractService.getEvent(eventId);
         setEventData(event);
       } catch (evtErr) {
-        // Fallback: try Supabase for event details
         try {
           const { data: evtRecord } = await supabase.from('events').select('*').eq('id', Number(eventId)).maybeSingle();
           if (evtRecord) setEventData({ name: evtRecord.name, date: evtRecord.date, location: evtRecord.location, description: evtRecord.description });
         } catch { /* ignore */ }
       }
 
-      // Resolve the actual email from Supabase using ticketId (email is NOT on blockchain)
+      // Resolve attendee email from Supabase using ticketId (privacy preservation: raw email is not on blockchain)
       try {
         const { data: ticketRecord } = await supabase
           .from('ticket_emails')
@@ -251,13 +309,75 @@ export default function VerifyTicket() {
       await delay(300);
 
       setLoading(false);
-      // Stagger the result reveal
       setTimeout(() => setShowResult(true), 100);
     } catch (err: any) {
       console.error('Verification error:', err);
       setError(err.message || 'Failed to verify ticket on blockchain');
       setLoading(false);
       setTimeout(() => setShowResult(true), 100);
+    }
+  };
+
+  const handleMarkUsed = async () => {
+    if (!eventId || !ticketId) return;
+
+    if (!walletState.isConnected) {
+      try {
+        await connectWallet();
+      } catch (err: any) {
+        toast({
+          title: "Wallet Connection Required",
+          description: err.message || "Please connect your MetaMask wallet.",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
+    try {
+      setMarkStatus('signing');
+      setMarkError(null);
+
+      // Submit on-chain invalidation transaction to Sepolia
+      const result = await contractService.markTicketUsed(
+        eventId,
+        ticketId,
+        (txHash) => {
+          setMarkTxHash(txHash);
+          setMarkStatus('mining');
+        }
+      );
+
+      setMarkStatus('success');
+      setMarkTxHash(result.transactionHash);
+
+      // Immediately invalidate local ticket state so re-entry is blocked
+      setTicketData((prev: any) => prev ? { ...prev, isUsed: true } : prev);
+
+      // Sync off-chain database if available
+      try {
+        await supabase
+          .from('ticket_emails')
+          .update({ status: 'used' })
+          .eq('ticket_id', ticketId);
+      } catch (syncErr) {
+        console.warn('Off-chain status sync skipped:', syncErr);
+      }
+
+      toast({
+        title: "Ticket Marked as Used ✅",
+        description: "Gate admission confirmed on Ethereum Sepolia. Duplicate admission is blocked.",
+      });
+    } catch (err: any) {
+      console.error('Failed to mark ticket used:', err);
+      setMarkStatus('error');
+      const msg = err.reason || err.message || 'Failed to submit invalidation transaction';
+      setMarkError(msg);
+      toast({
+        title: "Check-in Failed",
+        description: msg,
+        variant: "destructive"
+      });
     }
   };
 
@@ -404,11 +524,19 @@ export default function VerifyTicket() {
                     </div>
                   </div>
 
-                  <div className="text-center">
+                  {/* Gate check-in action button for staff/organizers */}
+                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
                     <Button
-                      variant="ghost"
+                      onClick={handleVerifyClick}
+                      className="flex-1 bg-gradient-to-r from-emerald-600 to-purple-600 hover:from-emerald-700 hover:to-purple-700 text-white font-semibold py-5 shadow-lg shadow-emerald-500/10"
+                    >
+                      <Shield className="w-4 h-4 mr-2" />
+                      Verify On Blockchain (Gate Check)
+                    </Button>
+                    <Button
+                      variant="outline"
                       onClick={() => setLocation('/')}
-                      className="text-slate-400 hover:text-white"
+                      className="border-slate-700 text-slate-300 hover:text-white"
                     >
                       Back to Home
                     </Button>
@@ -501,6 +629,10 @@ export default function VerifyTicket() {
   }
 
   // --- Result state ---
+  const isOrganizerWallet = eventData?.organizer && walletState.address
+    ? walletState.address.toLowerCase() === eventData.organizer.toLowerCase()
+    : false;
+
   return (
     <>
       <style>{animationStyles}</style>
@@ -521,30 +653,49 @@ export default function VerifyTicket() {
             <p className="text-slate-400 text-sm">Blockchain Ticket Verification</p>
           </div>
 
-          {/* Error state */}
+          {/* Network / Contract Error state */}
           {error ? (
             <div className={`${showResult ? 'animate-scaleIn' : 'opacity-0'}`}>
-              <Card className="bg-slate-900/60 border-red-500/40 backdrop-blur-xl overflow-hidden">
-                <div className="h-1.5 w-full bg-gradient-to-r from-red-500 to-orange-500" />
+              <Card className="bg-slate-900/60 border-amber-500/40 backdrop-blur-xl overflow-hidden">
+                <div className="h-1.5 w-full bg-gradient-to-r from-amber-500 to-red-500" />
                 <CardContent className="pt-8 pb-8">
                   <div className="text-center">
-                    <div className="inline-flex items-center justify-center w-20 h-20 bg-red-500/10 rounded-full mb-5 border-2 border-red-500/30">
-                      <XCircle className="w-10 h-10 text-red-400" />
+                    <div className="inline-flex items-center justify-center w-20 h-20 bg-amber-500/10 rounded-full mb-5 border-2 border-amber-500/30">
+                      <AlertTriangle className="w-10 h-10 text-amber-400" />
                     </div>
-                    <h2 className="text-2xl font-bold text-white mb-3">Verification Failed</h2>
-                    <p className="text-red-400/90 mb-2 text-sm leading-relaxed max-w-sm mx-auto">{error}</p>
-                    <div className="mt-6 bg-red-500/5 border border-red-500/20 rounded-lg p-3">
-                      <p className="text-xs text-slate-400 flex items-center justify-center gap-2">
-                        <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                        Could not verify this ticket on the Ethereum blockchain
+                    <h2 className="text-2xl font-bold text-white mb-2">
+                      {errorType === 'network' ? 'Network / RPC Connection Error' : 'Verification Error'}
+                    </h2>
+                    <p className="text-amber-300/90 mb-4 text-sm leading-relaxed max-w-sm mx-auto">
+                      {error}
+                    </p>
+                    <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 max-w-md mx-auto text-left space-y-1 mb-6">
+                      <p className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        Verification could not reach the Sepolia network:
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        This is a connectivity or RPC issue, not a confirmation of an invalid ticket. Check your network connection and retry.
                       </p>
                     </div>
-                    <Button
-                      onClick={() => setLocation('/')}
-                      className="mt-6 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white px-8"
-                    >
-                      Go to Home
-                    </Button>
+                    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                      {eventId && ticketId && (
+                        <Button
+                          onClick={() => runVerification(eventId, ticketId)}
+                          className="bg-amber-600 hover:bg-amber-700 text-white"
+                        >
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Retry Verification
+                        </Button>
+                      )}
+                      <Button
+                        onClick={() => setLocation('/')}
+                        variant="outline"
+                        className="border-slate-700 text-slate-300 hover:text-white"
+                      >
+                        Go to Home
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -552,48 +703,186 @@ export default function VerifyTicket() {
           ) : ticketData?.valid ? (
             <div className="space-y-5">
 
-              {/* SUCCESS — Main verification card */}
+              {/* SUCCESS / ALREADY-USED STATUS CARD */}
               <div className={`${showResult ? 'animate-scaleIn' : 'opacity-0'}`}>
-                <Card className="bg-gradient-to-br from-emerald-950/60 to-green-950/40 border-emerald-500/40 backdrop-blur-xl overflow-hidden">
-                  <div className="h-1.5 w-full bg-gradient-to-r from-emerald-400 via-green-400 to-emerald-500 bg-gradient-animate" />
-                  <CardContent className="pt-8 pb-6">
-                    <div className="text-center">
-                      {/* Animated checkmark ring */}
-                      <div className="inline-flex items-center justify-center w-24 h-24 rounded-full mb-5 animate-ringPulse"
-                        style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%)' }}>
-                        <div className="w-20 h-20 rounded-full bg-emerald-500/10 border-2 border-emerald-400/50 flex items-center justify-center">
-                          <CheckCircle className="w-10 h-10 text-emerald-400" />
+                {ticketData.isUsed ? (
+                  // ALREADY USED CARD (Yellow/Amber Warning)
+                  <Card className="bg-gradient-to-br from-amber-950/60 to-yellow-950/40 border-yellow-500/50 backdrop-blur-xl overflow-hidden shadow-xl shadow-yellow-500/10">
+                    <div className="h-1.5 w-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500" />
+                    <CardContent className="pt-8 pb-6">
+                      <div className="text-center">
+                        <div className="inline-flex items-center justify-center w-24 h-24 rounded-full mb-5 animate-ringPulseWarning"
+                          style={{ background: 'radial-gradient(circle, rgba(234,179,8,0.15) 0%, transparent 70%)' }}>
+                          <div className="w-20 h-20 rounded-full bg-yellow-500/10 border-2 border-yellow-400/50 flex items-center justify-center">
+                            <AlertTriangle className="w-10 h-10 text-yellow-400" />
+                          </div>
+                        </div>
+
+                        <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Ticket Already Used</h2>
+                        <p className="text-yellow-300 font-semibold text-lg mb-3">
+                          Entry Denied — Already Redeemed On-Chain
+                        </p>
+                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-500/15 rounded-lg border border-yellow-500/40 text-left max-w-sm">
+                          <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0" />
+                          <span className="text-yellow-200 text-xs font-medium">
+                            This NFT ticket was already marked as used on the Sepolia smart contract. Duplicate admission is blocked.
+                          </span>
                         </div>
                       </div>
-
-                      <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Ticket Verified</h2>
-                      <p className="shimmer-text text-lg font-semibold">
-                        {isDbVerified ? 'Verified via Database Record' : 'Authenticated on Ethereum Blockchain'}
-                      </p>
-                      {isDbVerified && (
-                        <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 rounded-lg border border-blue-500/30">
-                          <Shield className="w-3.5 h-3.5 text-blue-400" />
-                          <span className="text-blue-300 text-xs font-medium">Database Verified — ticket record found in system</span>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  // VALID & UNUSED CARD (Green Success)
+                  <Card className="bg-gradient-to-br from-emerald-950/60 to-green-950/40 border-emerald-500/40 backdrop-blur-xl overflow-hidden shadow-xl shadow-emerald-500/10">
+                    <div className="h-1.5 w-full bg-gradient-to-r from-emerald-400 via-green-400 to-emerald-500 bg-gradient-animate" />
+                    <CardContent className="pt-8 pb-6">
+                      <div className="text-center">
+                        <div className="inline-flex items-center justify-center w-24 h-24 rounded-full mb-5 animate-ringPulse"
+                          style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%)' }}>
+                          <div className="w-20 h-20 rounded-full bg-emerald-500/10 border-2 border-emerald-400/50 flex items-center justify-center">
+                            <CheckCircle className="w-10 h-10 text-emerald-400" />
+                          </div>
                         </div>
-                      )}
 
-                      {ticketData.isUsed && (
-                        <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-yellow-500/15 rounded-lg border border-yellow-500/40">
-                          <AlertTriangle className="w-4 h-4 text-yellow-400" />
-                          <span className="text-yellow-300 font-medium text-sm">Ticket Already Used</span>
-                        </div>
-                      )}
-
-                      {!ticketData.isUsed && (
-                        <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/10 rounded-lg border border-emerald-500/30">
+                        <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Ticket Verified</h2>
+                        <p className="shimmer-text text-lg font-semibold mb-3">
+                          Authenticated on Ethereum Blockchain
+                        </p>
+                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/10 rounded-lg border border-emerald-500/30">
                           <CheckCircle className="w-4 h-4 text-emerald-400" />
                           <span className="text-emerald-300 font-medium text-sm">Valid & Ready for Entry</span>
                         </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
+
+              {/* ORGANIZER GATE CHECK-IN / INVALIDATION PANEL (Duplicate Prevention) */}
+              {!ticketData.isUsed && (
+                <div className={`${showResult ? 'animate-fadeInUp' : 'opacity-0'}`} style={{ animationDelay: '0.1s' }}>
+                  <Card className="bg-slate-900/60 border-emerald-500/30 backdrop-blur-xl overflow-hidden">
+                    <CardHeader className="pb-3 border-b border-slate-700/50">
+                      <CardTitle className="text-base text-white flex items-center justify-between">
+                        <span className="flex items-center gap-2">
+                          <Shield className="w-5 h-5 text-emerald-400" />
+                          Gate Admission & Invalidation
+                        </span>
+                        {isOrganizerWallet && (
+                          <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-xs">
+                            Organizer Connected
+                          </Badge>
+                        )}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4 space-y-4">
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        To admit this attendee and prevent this ticket from being used again, the event organizer must submit an on-chain transaction calling <code className="text-emerald-400 font-mono text-[11px]">markTicketUsed</code>.
+                      </p>
+
+                      {/* Wallet state display */}
+                      {!walletState.isConnected ? (
+                        <div className="p-3 bg-slate-800/40 rounded-lg border border-slate-700/50 flex flex-col sm:flex-row items-center justify-between gap-3">
+                          <div className="text-left">
+                            <p className="text-xs text-slate-300 font-medium">Organizer Wallet Disconnected</p>
+                            <p className="text-[11px] text-slate-500">Connect the event organizer wallet to invalidate this ticket.</p>
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={connectWallet}
+                            disabled={isConnecting}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
+                          >
+                            <Wallet className="w-4 h-4 mr-1.5" />
+                            {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-slate-800/40 rounded-lg border border-slate-700/50 space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-slate-400">Connected Wallet:</span>
+                            <span className="font-mono text-emerald-400 font-medium">
+                              {walletState.address?.slice(0, 6)}...{walletState.address?.slice(-4)}
+                            </span>
+                          </div>
+                          {eventData?.organizer && (
+                            <div className="flex items-center justify-between text-xs border-t border-slate-700/40 pt-2">
+                              <span className="text-slate-400">Event Organizer:</span>
+                              <span className="font-mono text-purple-300 font-medium">
+                                {eventData.organizer.slice(0, 6)}...{eventData.organizer.slice(-4)}
+                              </span>
+                            </div>
+                          )}
+                          {!isOrganizerWallet && eventData?.organizer && (
+                            <p className="text-[11px] text-amber-300/90 pt-1">
+                              ⚠️ Note: Connected wallet does not match the event organizer address. Only the organizer or contract owner can successfully sign the on-chain invalidation.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Status feedback */}
+                      {markStatus === 'mining' && markTxHash && (
+                        <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg space-y-1">
+                          <div className="flex items-center gap-2 text-blue-300 text-xs font-semibold">
+                            <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                            Transaction Broadcast — Awaiting Sepolia Confirmation...
+                          </div>
+                          <a
+                            href={`https://sepolia.etherscan.io/tx/${markTxHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-blue-400 hover:underline flex items-center gap-1"
+                          >
+                            View on Etherscan <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      )}
+
+                      {markStatus === 'error' && markError && (
+                        <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                          <p className="text-red-400 text-xs font-medium">{markError}</p>
+                        </div>
+                      )}
+
+                      {markStatus === 'success' && (
+                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg flex items-center gap-2">
+                          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <p className="text-emerald-300 text-xs font-medium">
+                            Ticket successfully invalidated on-chain! Duplicate admission blocked.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Action button */}
+                      {markStatus !== 'success' && (
+                        <Button
+                          onClick={handleMarkUsed}
+                          disabled={markStatus === 'signing' || markStatus === 'mining'}
+                          className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold py-5 shadow-lg"
+                        >
+                          {markStatus === 'signing' ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Please Confirm in MetaMask...
+                            </>
+                          ) : markStatus === 'mining' ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Mining Block on Sepolia...
+                            </>
+                          ) : (
+                            <>
+                              <Shield className="w-4 h-4 mr-2" />
+                              Admit Attendee & Invalidate Ticket (On-Chain)
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
 
               {/* Event Details */}
               {eventData && (
@@ -634,9 +923,11 @@ export default function VerifyTicket() {
                           <div>
                             <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold">Date</p>
                             <p className="text-white text-sm font-medium">
-                              {new Date(eventData.date).toLocaleDateString('en-US', {
-                                weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
-                              })}
+                              {eventData.date
+                                ? new Date(eventData.date).toLocaleDateString('en-US', {
+                                    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
+                                  })
+                                : 'Date TBA'}
                             </p>
                           </div>
                         </div>
@@ -646,9 +937,11 @@ export default function VerifyTicket() {
                           <div>
                             <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold">Time</p>
                             <p className="text-white text-sm font-medium">
-                              {new Date(eventData.date).toLocaleTimeString('en-US', {
-                                hour: '2-digit', minute: '2-digit', hour12: true
-                              })}
+                              {eventData.date
+                                ? new Date(eventData.date).toLocaleTimeString('en-US', {
+                                    hour: '2-digit', minute: '2-digit', hour12: true
+                                  })
+                                : 'Time TBA'}
                             </p>
                           </div>
                         </div>
@@ -658,7 +951,7 @@ export default function VerifyTicket() {
                         <TicketIcon className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
                         <div>
                           <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold">Ticket Price</p>
-                          <p className="text-white font-semibold">{eventData.ticketPrice} ETH</p>
+                          <p className="text-white font-semibold">{eventData.ticketPrice || '0'} ETH</p>
                         </div>
                       </div>
                     </CardContent>
@@ -688,7 +981,7 @@ export default function VerifyTicket() {
                       <p className="text-purple-400 font-mono text-[11px] break-all bg-purple-500/5 p-2.5 rounded-lg border border-purple-500/20">
                         {ticketData.attendeeName}
                       </p>
-                      <p className="text-slate-600 text-[10px] mt-1">🔒 Only a privacy hash is stored on the blockchain — not the actual email</p>
+                      <p className="text-slate-500 text-[10px] mt-1">🔒 Only a privacy hash is stored on the blockchain — not the raw email</p>
                     </div>
 
                     <div>
@@ -703,7 +996,7 @@ export default function VerifyTicket() {
                       <div className="flex items-center gap-2 mt-1">
                         <div className={`w-2.5 h-2.5 rounded-full ${ticketData.isUsed ? 'bg-yellow-400 shadow-lg shadow-yellow-400/50' : 'bg-emerald-400 shadow-lg shadow-emerald-400/50'}`} />
                         <p className={`font-semibold text-sm ${ticketData.isUsed ? 'text-yellow-400' : 'text-emerald-400'}`}>
-                          {ticketData.isUsed ? 'Already Used' : 'Valid & Unused'}
+                          {ticketData.isUsed ? 'Already Used (Entry Denied)' : 'Valid & Unused'}
                         </p>
                       </div>
                     </div>
@@ -722,7 +1015,7 @@ export default function VerifyTicket() {
                       <div>
                         <p className="text-white font-semibold mb-1">Verified on Ethereum Blockchain</p>
                         <p className="text-slate-400 text-xs leading-relaxed">
-                          This ticket is an NFT minted on the Sepolia testnet smart contract.
+                          This ticket is an NFT on the Sepolia testnet smart contract.
                           Its authenticity is cryptographically guaranteed by the Ethereum blockchain — it cannot be forged or duplicated.
                         </p>
                         <a
@@ -751,7 +1044,7 @@ export default function VerifyTicket() {
               </div>
             </div>
           ) : (
-            /* INVALID ticket */
+            /* INVALID TICKET */
             <div className={`${showResult ? 'animate-scaleIn' : 'opacity-0'}`}>
               <Card className="bg-slate-900/60 border-red-500/40 backdrop-blur-xl overflow-hidden">
                 <div className="h-1.5 w-full bg-gradient-to-r from-red-500 to-red-700" />
@@ -761,21 +1054,47 @@ export default function VerifyTicket() {
                       <XCircle className="w-10 h-10 text-red-400" />
                     </div>
                     <h2 className="text-2xl font-bold text-white mb-3">Invalid Ticket</h2>
-                    <p className="text-red-400/90 mb-2 text-sm max-w-sm mx-auto">
+                    <p className="text-red-400/90 mb-4 text-sm max-w-sm mx-auto">
                       This ticket NFT could not be found or verified on the Ethereum blockchain.
                     </p>
-                    <div className="mt-5 bg-red-500/5 border border-red-500/20 rounded-lg p-3">
-                      <p className="text-xs text-slate-400 flex items-center justify-center gap-2">
-                        <Shield className="w-3.5 h-3.5 text-red-400" />
-                        The NFT does not exist on the smart contract
-                      </p>
+
+                    {unmintedDbRecord ? (
+                      <div className="mt-2 bg-red-500/10 border border-red-500/30 rounded-lg p-3.5 max-w-md mx-auto text-left space-y-1 mb-6">
+                        <p className="text-xs text-red-300 font-semibold flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                          Unminted Database Record Detected:
+                        </p>
+                        <p className="text-[11px] text-red-200/80 leading-relaxed">
+                          A database record exists in the system{recipientEmail ? ` for ${recipientEmail}` : ''}, but this ticket has NOT been minted on the Ethereum Sepolia smart contract. Admission is strictly denied without on-chain cryptographic proof.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="mt-2 bg-red-500/5 border border-red-500/20 rounded-lg p-3 max-w-md mx-auto mb-6">
+                        <p className="text-xs text-slate-400 flex items-center justify-center gap-2">
+                          <Shield className="w-3.5 h-3.5 text-red-400" />
+                          No NFT exists for Event #{eventId} and Token ID #{ticketId} on the smart contract.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                      {eventId && ticketId && (
+                        <Button
+                          onClick={() => runVerification(eventId, ticketId)}
+                          className="bg-red-600 hover:bg-red-700 text-white"
+                        >
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Retry Verification
+                        </Button>
+                      )}
+                      <Button
+                        onClick={() => setLocation('/')}
+                        variant="outline"
+                        className="border-slate-700 text-slate-300 hover:text-white"
+                      >
+                        Go to Home
+                      </Button>
                     </div>
-                    <Button
-                      onClick={() => setLocation('/')}
-                      className="mt-6 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white px-8"
-                    >
-                      Go to Home
-                    </Button>
                   </div>
                 </CardContent>
               </Card>

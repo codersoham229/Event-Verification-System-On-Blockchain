@@ -672,13 +672,20 @@ export default function UserDashboard() {
       const { data, error } = await supabase.storage
         .from('enrollment-photos')
         .download(ticket.photo_path);
-      if (error || !data) throw error || new Error('Download failed');
+      if (error || !data) throw error || new Error('Photo download failed from storage');
       const decrypted = await decryptPhoto(data, ticket.photo_encryption_key, ticket.photo_encryption_iv);
       const url = URL.createObjectURL(decrypted);
       setTicketPhotoUrl(url);
-    } catch (err) {
-      console.error('Failed to load ticket photo:', err);
+    } catch (err: any) {
+      console.error('Failed to load or decrypt ticket photo:', err);
       setTicketPhotoUrl(null);
+      toast({
+        title: 'Photo Verification Notice',
+        description: err?.message?.includes('decryption') || err?.message?.includes('tag mismatch')
+          ? 'Could not decrypt attendee photo (integrity tag mismatch or corrupted encryption key).'
+          : 'Attendee photo is currently unavailable from storage.',
+        variant: 'destructive',
+      });
     } finally {
       setTicketPhotoLoading(false);
     }

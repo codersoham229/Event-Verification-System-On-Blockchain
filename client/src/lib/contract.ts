@@ -285,15 +285,19 @@ export class ContractService {
 
   async markTicketUsed(
     eventId: string,
-    ticketId: string
+    ticketId: string,
+    onPending?: (hash: string) => void
   ): Promise<{ transactionHash: string }> {
     try {
       const contract = await this.getContract();
       const tx = await contract.markTicketUsed(eventId, ticketId);
-      await tx.wait();
+      if (onPending && tx.hash) {
+        onPending(tx.hash);
+      }
+      const receipt = await tx.wait();
       
       return {
-        transactionHash: tx.hash
+        transactionHash: receipt?.hash || tx.hash
       };
     } catch (error: any) {
       throw new Error(`Failed to mark ticket as used: ${error.message}`);

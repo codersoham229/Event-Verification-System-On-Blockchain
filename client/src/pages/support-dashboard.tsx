@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import {
   Shield, MessageCircle, FileText, LogOut, CheckCircle, XCircle, Info,
   Users, Calendar, Ticket as TicketIcon, AlertTriangle, Lock, Activity,
@@ -107,14 +107,85 @@ export default function SupportDashboard() {
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Auth guard
+  const [authChecking, setAuthChecking] = useState(true);
+  const [supportUser, setSupportUser] = useState<{ email: string; role: string } | null>(null);
+
+  // Authenticated Support Session Guard
   useEffect(() => {
-    const session = localStorage.getItem('supportSession');
-    if (!session) { setLocation('/support-login'); return; }
-    try {
-      const parsed = JSON.parse(session);
-      if (!parsed.loggedIn) setLocation('/support-login');
-    } catch { setLocation('/support-login'); }
+    let mounted = true;
+
+    const verifySupportAuth = async () => {
+      try {
+        if (!isSupabaseConfigured()) {
+          toast({
+            title: 'Supabase Not Configured',
+            description: 'Support dashboard requires a configured Supabase backend.',
+            variant: 'destructive',
+          });
+          setLocation('/support-login');
+          return;
+        }
+
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session?.user) {
+          setLocation('/support-login');
+          return;
+        }
+
+        // Never trust user-editable user_metadata for privileged authorization.
+        // Only trust server-managed app_metadata or the database user_profiles table.
+        const appRole = session.user.app_metadata?.role;
+        let role = (appRole === 'support' || appRole === 'admin') ? appRole : null;
+
+        if (!role) {
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('role')
+            .eq('wallet_address', session.user.id)
+            .maybeSingle();
+
+          if (profile?.role === 'support' || profile?.role === 'admin') {
+            role = profile.role;
+          }
+        }
+
+        if (!role) {
+          // Logged in user does not possess support or admin role
+          await supabase.auth.signOut();
+          toast({
+            title: 'Access Denied',
+            description: 'This authenticated account lacks support or admin privileges.',
+            variant: 'destructive',
+          });
+          setLocation('/support-login');
+          return;
+        }
+
+        if (mounted) {
+          setSupportUser({
+            email: session.user.email || 'support@eventchain.com',
+            role: role,
+          });
+          setAuthChecking(false);
+        }
+      } catch (err) {
+        console.error('Support auth verification failed:', err);
+        setLocation('/support-login');
+      }
+    };
+
+    verifySupportAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        setLocation('/support-login');
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe();
+    };
   }, []);
 
   // Load ad requests
@@ -266,9 +337,14 @@ export default function SupportDashboard() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessagesData]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('supportSession');
-    toast({ title: 'Logged out', description: 'Support session ended.' });
+  const handleLogout = async () => {
+    try {
+      localStorage.removeItem('supportSession');
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Sign out error:', e);
+    }
+    toast({ title: 'Logged out', description: 'Support session ended securely.' });
     setLocation('/support-login');
   };
 
@@ -374,6 +450,15 @@ export default function SupportDashboard() {
 
   const priorityColor: Record<string, string> = { low: 'bg-blue-500/20 text-blue-400 border-blue-500/30', medium: 'bg-amber-500/20 text-amber-400 border-amber-500/30', high: 'bg-red-500/20 text-red-400 border-red-500/30' };
 
+  if (authChecking) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 border-2 border-green-500/30 border-t-green-500 rounded-full animate-spin" />
+        <p className="text-sm text-muted-foreground">Verifying support session & credentials...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
@@ -391,9 +476,17 @@ export default function SupportDashboard() {
               <h1 className="text-lg font-bold text-white">Support Team Dashboard</h1>
               <p className="text-xs text-muted-foreground">EventChain Operations Center</p>
             </div>
-            <Badge className="bg-green-500/10 text-green-400 border-green-500/30 animate-pulse ml-2">â— Live</Badge>
+            <Badge className="bg-green-500/10 text-green-400 border-green-500/30 animate-pulse ml-2">● Live</Badge>
           </div>
           <div className="flex items-center gap-3">
+            {supportUser && (
+              <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-md bg-muted/50 border border-border text-xs">
+                <span className="text-muted-foreground font-mono">{supportUser.email}</span>
+                <Badge variant="outline" className="text-[10px] uppercase font-bold text-cyan-400 border-cyan-500/30 bg-cyan-500/10">
+                  {supportUser.role}
+                </Badge>
+              </div>
+            )}
             <span className="text-xs text-muted-foreground hidden sm:block">Updated {lastUpdated.toLocaleTimeString()}</span>
             <Button variant="ghost" size="sm" onClick={fetchStats} disabled={refreshing} className="text-muted-foreground hover:text-white">
               <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />

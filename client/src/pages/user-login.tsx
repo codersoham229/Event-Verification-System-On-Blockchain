@@ -33,7 +33,7 @@ export default function UserLoginPage() {
 
     try {
       if (!isSupabaseConfigured()) {
-        const user = localAuth.login(email, password);
+        const user = await localAuth.login(email, password);
         localAuth.setCurrentUser(user);
 
         if (rememberMe) {

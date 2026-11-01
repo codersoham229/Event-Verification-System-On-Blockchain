@@ -34,7 +34,7 @@ export default function LoginPage() {
 
     try {
       if (!isSupabaseConfigured()) {
-        const user = localAuth.login(formData.email, formData.password);
+        const user = await localAuth.login(formData.email, formData.password);
         localAuth.setCurrentUser(user);
 
         if (formData.rememberMe) {

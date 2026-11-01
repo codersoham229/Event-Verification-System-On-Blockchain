@@ -51,7 +51,7 @@ export default function UserSignupPage() {
     try {
       if (!isSupabaseConfigured()) {
         try {
-          const user = localAuth.signup(formData.email, formData.password, formData.name, 'user');
+          const user = await localAuth.signup(formData.email, formData.password, formData.name, 'user');
           localAuth.setCurrentUser(user);
 
           toast({ title: "Account Created! 🎉", description: "Welcome to BlockTix." });
